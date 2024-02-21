@@ -23,12 +23,6 @@ assert results == [list(queryset) for queryset in querysets]
 
 ```
 
-## Notes
-
-> [!POSTGRES]  
-> Note parallelisation by postgres is not guaranteed, as it depends on lot of config params (max_parallel_workers_per_gather, min_parallel_table_scan_size, max_parallel_workers etc). Even without parallelisation, this can be faster than normal evaluation of querysets due to reduced no of network trips.
-
-
 ## Contribution suggestions
 
 - Add tests
@@ -39,3 +33,9 @@ assert results == [list(queryset) for queryset in querysets]
 - Find a better package name? 😂 (think SEO)
 - Add a diagram in README depicting the time saved during network trips
 - Anything else which makes this better, open to ideas
+
+  
+## Notes
+
+> [!NOTE]
+> Note parallelisation by postgres is not guaranteed, as it depends on lot of config params (max_parallel_workers_per_gather, min_parallel_table_scan_size, max_parallel_workers etc). Even without parallelisation, this can be faster than normal one-by-one evaluation of querysets due to reduced no of network trips.
