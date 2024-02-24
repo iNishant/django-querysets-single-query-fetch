@@ -24,6 +24,8 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+        ports:
+          - 5432:5432
 
     steps:
     - uses: actions/checkout@v3
@@ -40,5 +42,3 @@ jobs:
       run: |
         ./check-lint.sh
         python manage.py test -v 3 --no-input
-      env:
-        DEFAULT_DB_HOST: postgres
