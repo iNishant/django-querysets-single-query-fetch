@@ -12,7 +12,6 @@ from django.db.models import DecimalField, QuerySet, UUIDField
 from django.db.models.query import (
     FlatValuesListIterable,
     ModelIterable,
-    QuerySet,
     ValuesIterable,
     ValuesListIterable,
     get_related_populators,
@@ -56,14 +55,20 @@ class QuerysetsSingleQueryFetch:
         db = queryset.db
         compiler = queryset.query.get_compiler(using=db)
         try:
-            sql, params = compiler.as_sql(with_col_aliases=True)  # add col aliases other wise json
+            sql, params = compiler.as_sql(
+                with_col_aliases=True
+            )  # add col aliases other wise json
             # build object cant handle same column name from two tables => two duplicate keys in dict
             # (one primary, one joined for example)
         except EmptyResultSet:
             return ""
 
         for param in params:
-            if isinstance(param, str) or isinstance(param, UUID) or isinstance(param, datetime.datetime):
+            if (
+                isinstance(param, str)
+                or isinstance(param, UUID)
+                or isinstance(param, datetime.datetime)
+            ):
                 param = f"'{param}'"
             elif isinstance(param, int) or isinstance(param, float):
                 # type which can be passed as is
@@ -86,7 +91,9 @@ class QuerysetsSingleQueryFetch:
             if issubclass(DecimalField, field.__class__):
                 float_value = getattr(obj, field.attname)
                 if float_value is not None:
-                    setattr(obj, field.attname, Decimal(str(getattr(obj, field.attname))))
+                    setattr(
+                        obj, field.attname, Decimal(str(getattr(obj, field.attname)))
+                    )
             elif issubclass(UUIDField, field.__class__):
                 uuid_value = getattr(obj, field.attname)
                 if uuid_value is not None:
@@ -94,7 +101,9 @@ class QuerysetsSingleQueryFetch:
 
         return obj
 
-    def _get_instances_from_results_for_model_iterable(self, queryset: QuerySet, results: list):
+    def _get_instances_from_results_for_model_iterable(
+        self, queryset: QuerySet, results: list
+    ):
         """
         slightly modified copy paste from source of ModelIterable
         """
@@ -122,7 +131,9 @@ class QuerysetsSingleQueryFetch:
         model_cls = klass_info["model"]
         select_fields = klass_info["select_fields"]
         model_fields_start, model_fields_end = select_fields[0], select_fields[-1] + 1
-        init_list = [f[0].target.attname for f in select[model_fields_start:model_fields_end]]
+        init_list = [
+            f[0].target.attname for f in select[model_fields_start:model_fields_end]
+        ]
         related_populators = get_related_populators(klass_info, select, db)
         known_related_objects = [
             (
@@ -130,7 +141,9 @@ class QuerysetsSingleQueryFetch:
                 related_objs,
                 operator.attrgetter(
                     *[
-                        field.attname if from_field == "self" else queryset.model._meta.get_field(from_field).attname
+                        field.attname
+                        if from_field == "self"
+                        else queryset.model._meta.get_field(from_field).attname
                         for from_field in field.from_fields
                     ]
                 ),
@@ -139,7 +152,9 @@ class QuerysetsSingleQueryFetch:
         ]
 
         for row in compiler.results_iter(results):
-            obj = model_cls.from_db(db, init_list, row[model_fields_start:model_fields_end])
+            obj = model_cls.from_db(
+                db, init_list, row[model_fields_start:model_fields_end]
+            )
 
             # because of json_agg some field level parsing/handling broke, patch it for now
             # TODO: point field handling
@@ -169,7 +184,9 @@ class QuerysetsSingleQueryFetch:
 
         return instances
 
-    def _convert_raw_results_to_final_queryset_results(self, queryset: QuerySet, queryset_raw_results: list):
+    def _convert_raw_results_to_final_queryset_results(
+        self, queryset: QuerySet, queryset_raw_results: list
+    ):
         queryset_results = []
         if issubclass(queryset._iterable_class, ModelIterable):
             queryset_results = self._get_instances_from_results_for_model_iterable(
@@ -178,17 +195,23 @@ class QuerysetsSingleQueryFetch:
         elif issubclass(queryset._iterable_class, ValuesIterable):
             queryset_results = queryset_raw_results
         elif issubclass(queryset._iterable_class, FlatValuesListIterable):
-            queryset_results = [list(row_dict.values())[0] for row_dict in queryset_raw_results]
+            queryset_results = [
+                list(row_dict.values())[0] for row_dict in queryset_raw_results
+            ]
         elif issubclass(queryset._iterable_class, ValuesListIterable):
-            queryset_results = [list(row_dict.values()) for row_dict in queryset_raw_results]
+            queryset_results = [
+                list(row_dict.values()) for row_dict in queryset_raw_results
+            ]
         else:
-            raise ValueError(f"Unsupported queryset iterable class: {queryset._iterable_class}")
+            raise ValueError(
+                f"Unsupported queryset iterable class: {queryset._iterable_class}"
+            )
         return queryset_results
 
     def execute(self) -> list[list[Any]]:
-
         django_sqls_for_querysets = [
-            self._get_django_sql_for_queryset(queryset=queryset) for queryset in self.querysets
+            self._get_django_sql_for_queryset(queryset=queryset)
+            for queryset in self.querysets
         ]
 
         final_result_list = []
@@ -197,9 +220,13 @@ class QuerysetsSingleQueryFetch:
             if not queryset_sql:
                 final_result_list.append([])
             else:
-                final_result_list.append(None)  # will be replaced by actual result below
+                final_result_list.append(
+                    None
+                )  # will be replaced by actual result below
 
-        non_empty_django_sqls_for_querysets = [sql for sql in django_sqls_for_querysets if sql]
+        non_empty_django_sqls_for_querysets = [
+            sql for sql in django_sqls_for_querysets if sql
+        ]
 
         raw_sql = f"""
             SELECT
@@ -222,7 +249,8 @@ class QuerysetsSingleQueryFetch:
                 continue
             final_result.append(
                 self._convert_raw_results_to_final_queryset_results(
-                    queryset=queryset, queryset_raw_results=raw_sql_result_dict[str(index)]
+                    queryset=queryset,
+                    queryset_raw_results=raw_sql_result_dict[str(index)],
                 )
             )
             index += 1

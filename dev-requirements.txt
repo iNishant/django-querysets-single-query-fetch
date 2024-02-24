@@ -1,0 +1,2 @@
+ruff==0.2.2
+model-bakery==1.17.0
