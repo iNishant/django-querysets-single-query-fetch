@@ -28,8 +28,6 @@ assert results == [list(queryset) for queryset in querysets]
 - Add tests
 - Add support for other databases 👀
 - Make parsing logic as close to actual querysets and with minimal diff (utilising as much django internal code/utils as possible, maybe submit proposals to django if you find better ways to organise code, for eg [BaseIterable](https://github.com/django/django/blob/main/django/db/models/query.py#L46) could probably have an abstract method called `convert_sql_row_to_transformed_result_row`?)
-- Make Github action workflows for test/lint
-- Add pip publishing workflow? At least setup.py, install_requires, testapp/testproject excluded from final tar etc..
 - Find a better package name? 😂 (think SEO)
 - Add a diagram in README depicting the time saved during network trips
 - Anything else which makes this better, open to ideas
