@@ -38,6 +38,7 @@ jobs:
         pip install -r dev-requirements.txt
     - name: Run tests
       run: |
-        ruff check .
-        ruff format . --check
+        ./check-lint.sh
         python manage.py test -v 3 --no-input
+      env:
+        DEFAULT_DB_HOST: postgres
