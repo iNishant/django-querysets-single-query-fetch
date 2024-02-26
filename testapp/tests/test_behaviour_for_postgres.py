@@ -72,3 +72,33 @@ class QuerysetsSingleQueryFetchPostgresTestCase(TransactionTestCase):
             self.assertIsInstance(fetched_product_instance, StoreProduct)
             self.assertEqual(fetched_product_instance.id, self.product_1.id)
             self.assertEqual(fetched_product_instance.selling_price, Decimal("50.22"))
+
+    def test_executing_single_queryset_which_is_always_empty_is_handled(self):
+        """
+        if there is only one queryset and it is always empty, the result should be an empty list,
+        there should not be any db query made
+        """
+        with self.assertNumQueries(0):
+            results = QuerysetsSingleQueryFetch(
+                querysets=[StoreProduct.objects.filter(id__in=[])]
+            ).execute()
+
+            self.assertEqual(len(results), 1)
+            self.assertEqual(results[0], [])
+
+    def test_executing_multiple_querysets_which_are_always_empty_is_handled(self):
+        """
+        if there are multiple querysets which are always empty, the result should be an empty list
+        for each queryset, there should not be any db query made as well
+        """
+        with self.assertNumQueries(0):
+            results = QuerysetsSingleQueryFetch(
+                querysets=[
+                    StoreProduct.objects.filter(id__in=[]),
+                    OnlineStore.objects.filter(id__in=[]),
+                ]
+            ).execute()
+
+            self.assertEqual(len(results), 2)
+            self.assertEqual(results[0], [])
+            self.assertEqual(results[1], [])
