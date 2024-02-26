@@ -228,16 +228,20 @@ class QuerysetsSingleQueryFetch:
             sql for sql in django_sqls_for_querysets if sql
         ]
 
-        raw_sql = f"""
-            SELECT
-                json_build_object(
-                    {', '.join([f"'{i}', {sql}" for i, sql in enumerate(non_empty_django_sqls_for_querysets)])}
-            )
-        """
+        if non_empty_django_sqls_for_querysets:
+            raw_sql = f"""
+                SELECT
+                    json_build_object(
+                        {', '.join([f"'{i}', {sql}" for i, sql in enumerate(non_empty_django_sqls_for_querysets)])}
+                )
+            """
 
-        with connections["default"].cursor() as cursor:
-            cursor.execute(raw_sql, params={})
-            raw_sql_result_dict: dict = cursor.fetchone()[0]
+            with connections["default"].cursor() as cursor:
+                cursor.execute(raw_sql, params={})
+                raw_sql_result_dict: dict = cursor.fetchone()[0]
+        else:
+            # all querysets are always empty (EmptyResultSet)
+            raw_sql_result_dict = {}
 
         final_result = []
         index = 0
