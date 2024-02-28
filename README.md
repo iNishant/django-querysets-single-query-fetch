@@ -4,6 +4,9 @@ Executes multiple querysets over a single db query and returns results which wou
 
 Supports only Postgres as of now
 
+> [!NOTE]
+> The performance gains from this utility were pretty significant for our use cases so in some places we have added quick hacks (see `_transform_object_to_handle_json_agg`) to get around some parsing/conversion issues where raw values are not parsed properly into their python types (for eg. datetime, UUID, Decimal). This is usually done in [from_db_value](https://docs.djangoproject.com/en/5.0/ref/models/fields/#django.db.models.Field.from_db_value) for custom fields and by database-specific backends for django supported fields (psycopg for postgres). If you encounter a similar issue, just send a patch with a quick hack. For a complete solution, we would have to dive deeper into psycopg/postgres and its handling of `json_agg` output.
+
 ## Installation
 
 ```bash
@@ -35,5 +38,4 @@ assert results == [list(queryset) for queryset in querysets]
   
 ## Notes
 
-> [!NOTE]
-> Note parallelisation by postgres is not guaranteed, as it depends on lot of config params (max_parallel_workers_per_gather, min_parallel_table_scan_size, max_parallel_workers etc). Even without parallelisation, this can be faster than normal one-by-one evaluation of querysets due to reduced no of network trips.
+- Note parallelisation by postgres is not guaranteed, as it depends on lot of config params (max_parallel_workers_per_gather, min_parallel_table_scan_size, max_parallel_workers etc). Even without parallelisation, this can be faster than normal one-by-one evaluation of querysets due to reduced no of network trips.
