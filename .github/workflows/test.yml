@@ -4,7 +4,8 @@
 name: Test
 
 on:
-  push
+  push:
+  pull_request:
 
 permissions:
   contents: read
