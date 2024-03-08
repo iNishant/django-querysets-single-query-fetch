@@ -293,7 +293,7 @@ class QuerysetsSingleQueryFetch:
         self, queryset: QuerySet, queryset_raw_results: list
     ):
         if getattr(queryset, "fetch_count", False):
-            return queryset_raw_results[0]["__count"]
+            queryset_results = queryset_raw_results[0]["__count"]
         elif issubclass(queryset._iterable_class, ModelIterable):
             queryset_results = self._get_instances_from_results_for_model_iterable(
                 queryset=queryset, results=queryset_raw_results
