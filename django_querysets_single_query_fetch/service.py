@@ -8,7 +8,7 @@ from uuid import UUID
 
 from django.core.exceptions import EmptyResultSet
 from django.db import connections
-from django.db.models import DecimalField, QuerySet, UUIDField
+from django.db.models import DecimalField, QuerySet, UUIDField, Count
 from django.db.models.query import (
     FlatValuesListIterable,
     ModelIterable,
@@ -42,6 +42,112 @@ class QuerysetsSingleQueryFetch:
     def __init__(self, querysets: list[QuerySet]) -> None:
         self.querysets = querysets
 
+    def _get_fetch_count_compiler_from_queryset(
+        self, queryset: QuerySet, using: str
+    ) -> Any:
+        """
+        slightly modified copy paste from get_count and get_aggregation in django.db.models.sql.compiler
+        """
+        obj = queryset.query.clone()
+        obj.add_annotation(Count("*"), alias="__count", is_summary=True)
+        added_aggregate_names = ["__count"]
+        if not obj.annotation_select:
+            return {}
+        existing_annotations = [
+            annotation
+            for alias, annotation in obj.annotations.items()
+            if alias not in added_aggregate_names
+        ]
+        if (
+            isinstance(obj.group_by, tuple)
+            or obj.is_sliced
+            or existing_annotations
+            or obj.distinct
+            or obj.combinator
+        ):
+            from django.db.models.sql.subqueries import AggregateQuery
+
+            inner_query = obj.clone()
+            inner_query.subquery = True
+            outer_query = AggregateQuery(obj.model, inner_query)
+            inner_query.select_for_update = False
+            inner_query.select_related = False
+            inner_query.set_annotation_mask(obj.annotation_select)
+            # Queries with distinct_fields need ordering and when a limit is
+            # applied we must take the slice from the ordered query. Otherwise
+            # no need for ordering.
+            inner_query.clear_ordering(force=False)
+            if not inner_query.distinct:
+                # If the inner query uses default select and it has some
+                # aggregate annotations, then we must make sure the inner
+                # query is grouped by the main model's primary key. However,
+                # clearing the select clause can alter results if distinct is
+                # used.
+                has_existing_aggregate_annotations = any(
+                    annotation
+                    for annotation in existing_annotations
+                    if getattr(annotation, "contains_aggregate", True)
+                )
+                if inner_query.default_cols and has_existing_aggregate_annotations:
+                    inner_query.group_by = (
+                        obj.model._meta.pk.get_col(inner_query.get_initial_alias()),
+                    )
+                inner_query.default_cols = False
+
+            relabels = {t: "subquery" for t in inner_query.alias_map}
+            relabels[None] = "subquery"
+            # Remove any aggregates marked for reduction from the subquery
+            # and move them to the outer AggregateQuery.
+            col_cnt = 0
+            for alias, expression in list(inner_query.annotation_select.items()):
+                annotation_select_mask = inner_query.annotation_select_mask
+                if expression.is_summary:
+                    expression, col_cnt = inner_query.rewrite_cols(expression, col_cnt)
+                    outer_query.annotations[alias] = expression.relabeled_clone(
+                        relabels
+                    )
+                    del inner_query.annotations[alias]
+                    annotation_select_mask.remove(alias)
+                # Make sure the annotation_select wont use cached results.
+                inner_query.set_annotation_mask(inner_query.annotation_select_mask)
+            if (
+                inner_query.select == ()
+                and not inner_query.default_cols
+                and not inner_query.annotation_select_mask
+            ):
+                # In case of Model.objects[0:3].count(), there would be no
+                # field selected in the inner query, yet we must use a subquery.
+                # So, make sure at least one field is selected.
+                inner_query.select = (
+                    obj.model._meta.pk.get_col(inner_query.get_initial_alias()),
+                )
+        else:
+            outer_query = obj
+            obj.select = ()
+            obj.default_cols = False
+            obj.extra = {}
+
+        empty_set_result = [
+            expression.empty_result_set_value
+            for expression in outer_query.annotation_select.values()
+        ]
+        elide_empty = not any(result is NotImplemented for result in empty_set_result)
+        outer_query.clear_ordering(force=True)
+        outer_query.clear_limits()
+        outer_query.select_for_update = False
+        outer_query.select_related = False
+        return outer_query.get_compiler(using, elide_empty=elide_empty)
+
+    def _get_compiler_from_queryset(self, queryset: QuerySet) -> Any:
+        db = queryset.db
+        # Use getattr to check for 'fetch_count' attribute, defaulting to False if not found
+        if getattr(queryset, "fetch_count", False):
+            return self._get_fetch_count_compiler_from_queryset(
+                queryset=queryset, using=db
+            )
+        else:
+            return queryset.query.get_compiler(using=db)
+
     def _get_django_sql_for_queryset(self, queryset: QuerySet) -> str:
         """
         gets the sql that django would normally execute for the queryset, return empty string
@@ -52,8 +158,7 @@ class QuerysetsSingleQueryFetch:
         # this is a bit hacky, but it works for now
 
         quoted_params = ()
-        db = queryset.db
-        compiler = queryset.query.get_compiler(using=db)
+        compiler = self._get_compiler_from_queryset(queryset=queryset)
         try:
             sql, params = compiler.as_sql(
                 with_col_aliases=True
@@ -187,8 +292,9 @@ class QuerysetsSingleQueryFetch:
     def _convert_raw_results_to_final_queryset_results(
         self, queryset: QuerySet, queryset_raw_results: list
     ):
-        queryset_results = []
-        if issubclass(queryset._iterable_class, ModelIterable):
+        if getattr(queryset, "fetch_count", False):
+            return queryset_raw_results[0]["__count"]
+        elif issubclass(queryset._iterable_class, ModelIterable):
             queryset_results = self._get_instances_from_results_for_model_iterable(
                 queryset=queryset, results=queryset_raw_results
             )
@@ -245,7 +351,6 @@ class QuerysetsSingleQueryFetch:
 
         final_result = []
         index = 0
-
         for queryset, result in zip(self.querysets, final_result_list):
             if result is not None:
                 # empty case EmptyResultSet

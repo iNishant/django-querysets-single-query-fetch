@@ -102,3 +102,14 @@ class QuerysetsSingleQueryFetchPostgresTestCase(TransactionTestCase):
             self.assertEqual(len(results), 2)
             self.assertEqual(results[0], [])
             self.assertEqual(results[1], [])
+
+    def test_fetch_count(self):
+        with self.assertNumQueries(0):
+            store_product_count_queryset = StoreProduct.objects.filter()
+            store_product_count_queryset.fetch_count = True
+        with self.assertNumQueries(1):
+            results = QuerysetsSingleQueryFetch(
+                querysets=[store_product_count_queryset, StoreProduct.objects.filter()]
+            ).execute()
+        self.assertEqual(len(results), 2)
+        self.assertEqual(results[0], 2)
