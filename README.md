@@ -24,25 +24,24 @@ results = QuerysetsSingleQueryFetch(querysets=querysets).execute()
 
 assert results == [list(queryset) for queryset in querysets] 
 
-# if you want to perform queryset.count(). You have to perform this in this way 
-# as count() is not lazy method and it will execute the query 
+```
 
-from service import QuerysetCountWrapper # gives way to lazily fetch count
+Fetching count of queryset using `QuerysetCountWrapper` (since `queryset.count()` is not a lazy method)
 
-results =  QuerysetsSingleQueryFetch(QuerysetCountWrapper(queryset=queryset1), queryset2, ...) 
+```py
+from service import QuerysetCountWrapper
+
+results =  QuerysetsSingleQueryFetch(querysets=QuerysetCountWrapper(queryset=queryset1), queryset2, ...) 
 
 assert results == [queryset1.count(), list(queryset2), ...]
-
 ```
 
-
-
-```
 
 ## Contribution suggestions
 
-- Add tests
+- Add tests (django version matrix, different types and parsing etc)
 - Add support for other databases 👀
+- Add support for all aggregations using a similar approach as used in `QuerysetCountWrapper`
 - Make parsing logic as close to actual querysets and with minimal diff (utilising as much django internal code/utils as possible, maybe submit proposals to django if you find better ways to organise code, for eg [BaseIterable](https://github.com/django/django/blob/main/django/db/models/query.py#L46) could probably have an abstract method called `convert_sql_row_to_transformed_result_row`?)
 - Find a better package name? 😂 (think SEO)
 - Add a diagram in README depicting the time saved during network trips
