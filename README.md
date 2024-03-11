@@ -22,7 +22,20 @@ from django_querysets_single_query_fetch.service import QuerysetsSingleQueryFetc
 querysets = [queryset1, queryset2, ...]
 results = QuerysetsSingleQueryFetch(querysets=querysets).execute()
 
-assert results == [list(queryset) for queryset in querysets]
+assert results == [list(queryset) for queryset in querysets] 
+
+# if you want to perform queryset.count(). You have to perform this in this way 
+# as count() is not lazy method and it will execute the query 
+
+from service import QuerysetCountWrapper # gives way to lazily fetch count
+
+results =  QuerysetsSingleQueryFetch(QuerysetCountWrapper(queryset=queryset1), queryset2, ...) 
+
+assert results == [queryset1.count(), list(queryset2), ...]
+
+```
+
+
 
 ```
 

@@ -3,7 +3,7 @@ import json
 import logging
 import operator
 from decimal import Decimal
-from typing import Any
+from typing import Any, Union
 from uuid import UUID
 
 from django.core.exceptions import EmptyResultSet
@@ -18,6 +18,15 @@ from django.db.models.query import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class QuerysetCountWrapper:
+    """
+    Wrapper around queryset to indicate that we want to fetch count of the queryset
+    """
+
+    def __init__(self, queryset: QuerySet) -> None:
+        self.queryset = queryset
 
 
 class QuerysetsSingleQueryFetch:
@@ -51,8 +60,6 @@ class QuerysetsSingleQueryFetch:
         obj = queryset.query.clone()
         obj.add_annotation(Count("*"), alias="__count", is_summary=True)
         added_aggregate_names = ["__count"]
-        if not obj.annotation_select:
-            return {}
         existing_annotations = [
             annotation
             for alias, annotation in obj.annotations.items()
@@ -138,15 +145,20 @@ class QuerysetsSingleQueryFetch:
         outer_query.select_related = False
         return outer_query.get_compiler(using, elide_empty=elide_empty)
 
-    def _get_compiler_from_queryset(self, queryset: QuerySet) -> Any:
-        db = queryset.db
-        # Use getattr to check for 'fetch_count' attribute, defaulting to False if not found
-        if getattr(queryset, "fetch_count", False):
-            return self._get_fetch_count_compiler_from_queryset(
-                queryset=queryset, using=db
+    def _get_compiler_from_queryset(
+        self, queryset: Union[QuerySet, QuerysetCountWrapper]
+    ) -> Any:
+        """
+        if queryset is wrapped in QuerysetCountWrapper, then we need to call _get_fetch_count_compiler_from_queryset
+        else we can call get_compiler directly from queryset's query
+        """
+        return (
+            self._get_fetch_count_compiler_from_queryset(
+                queryset.queryset, using=queryset.queryset.db
             )
-        else:
-            return queryset.query.get_compiler(using=db)
+            if isinstance(queryset, QuerysetCountWrapper)
+            else queryset.query.get_compiler(using=queryset.db)
+        )
 
     def _get_django_sql_for_queryset(self, queryset: QuerySet) -> str:
         """
@@ -292,7 +304,7 @@ class QuerysetsSingleQueryFetch:
     def _convert_raw_results_to_final_queryset_results(
         self, queryset: QuerySet, queryset_raw_results: list
     ):
-        if getattr(queryset, "fetch_count", False):
+        if isinstance(queryset, QuerysetCountWrapper):
             queryset_results = queryset_raw_results[0]["__count"]
         elif issubclass(queryset._iterable_class, ModelIterable):
             queryset_results = self._get_instances_from_results_for_model_iterable(
