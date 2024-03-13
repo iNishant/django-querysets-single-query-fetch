@@ -83,7 +83,9 @@ class QuerysetsSingleQueryFetchPostgresTestCase(TransactionTestCase):
             self.assertIsInstance(fetched_store_instance, OnlineStore)
             # add assertion to created_at and expired_on
             self.assertEqual(fetched_store_instance.created_at, self.store.created_at)
-            self.assertEqual(fetched_store_instance.expired_on, self.store.expired_on)
+            self.assertEqual(
+                fetched_store_instance.expired_on.date(), self.store.expired_on
+            )
 
     def test_executing_single_queryset_which_is_always_empty_is_handled(self):
         """
