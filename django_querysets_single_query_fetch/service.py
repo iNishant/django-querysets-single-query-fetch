@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import Any, Union
 from uuid import UUID
 
+from django.conf import settings
 from django.core.exceptions import EmptyResultSet
 from django.db import connections
 from django.db.models import DecimalField, QuerySet, UUIDField, Count
@@ -327,6 +328,11 @@ class QuerysetsSingleQueryFetch:
         return queryset_results
 
     def execute(self) -> list[list[Any]]:
+        queryset_parallelization_enabled = getattr(settings, "QUERYSET_PARALLELIZATION_ENABLED", True)
+        if not queryset_parallelization_enabled:
+            # just an emergency switch to disable this feature
+            return [list(queryset) for queryset in self.querysets]
+
         django_sqls_for_querysets = [
             self._get_django_sql_for_queryset(queryset=queryset)
             for queryset in self.querysets
