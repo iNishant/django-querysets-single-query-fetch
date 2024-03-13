@@ -68,7 +68,10 @@ class QuerysetsSingleQueryFetchPostgresTestCase(TransactionTestCase):
     def test_single_query_result_is_of_proper_types(self):
         with self.assertNumQueries(1):
             results = QuerysetsSingleQueryFetch(
-                querysets=[StoreProduct.objects.filter(id=self.product_1.id), OnlineStore.objects.filter(id=self.store.id)],
+                querysets=[
+                    StoreProduct.objects.filter(id=self.product_1.id),
+                    OnlineStore.objects.filter(id=self.store.id),
+                ],
             ).execute()
 
             self.assertEqual(len(results), 2)
@@ -81,7 +84,6 @@ class QuerysetsSingleQueryFetchPostgresTestCase(TransactionTestCase):
             # add assertion to created_at and expired_on
             self.assertEqual(type(fetched_store_instance.created_at), datetime)
             self.assertEqual(type(fetched_store_instance.expired_on), datetime)
-
 
     def test_executing_single_queryset_which_is_always_empty_is_handled(self):
         """

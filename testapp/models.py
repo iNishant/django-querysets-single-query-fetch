@@ -7,7 +7,6 @@ class OnlineStore(models.Model):
     expired_on = models.DateField(null=True, blank=True)
 
 
-
 class StoreProductCategory(models.Model):
     store = models.ForeignKey(OnlineStore, on_delete=models.CASCADE)
     name = models.CharField(max_length=30)

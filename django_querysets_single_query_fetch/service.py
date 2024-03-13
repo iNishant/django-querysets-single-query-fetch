@@ -9,7 +9,14 @@ from uuid import UUID
 from django.conf import settings
 from django.core.exceptions import EmptyResultSet
 from django.db import connections
-from django.db.models import DecimalField, QuerySet, UUIDField, Count, DateTimeField, DateField
+from django.db.models import (
+    DecimalField,
+    QuerySet,
+    UUIDField,
+    Count,
+    DateTimeField,
+    DateField,
+)
 from django.db.models.query import (
     FlatValuesListIterable,
     ModelIterable,
@@ -217,7 +224,7 @@ class QuerysetsSingleQueryFetch:
                 uuid_value = getattr(obj, field.attname)
                 if uuid_value is not None:
                     setattr(obj, field.attname, UUID(uuid_value))
-            elif issubclass(DateTimeField,  field.__class__):
+            elif issubclass(DateTimeField, field.__class__):
                 datetime_value = getattr(obj, field.attname)
                 if datetime_value is not None and isinstance(datetime_value, str):
                     setattr(obj, field.attname, parse_datetime(datetime_value))
