@@ -3,6 +3,9 @@ from django.db import models
 
 class OnlineStore(models.Model):
     name = models.CharField(max_length=30, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expired_on = models.DateField(null=True, blank=True)
+
 
 
 class StoreProductCategory(models.Model):

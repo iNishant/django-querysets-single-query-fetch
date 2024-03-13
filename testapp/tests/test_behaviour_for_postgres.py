@@ -1,3 +1,4 @@
+from datetime import datetime
 from decimal import Decimal
 
 from django.test import TransactionTestCase
@@ -11,8 +12,8 @@ from testapp.models import OnlineStore, StoreProduct, StoreProductCategory
 
 
 class QuerysetsSingleQueryFetchPostgresTestCase(TransactionTestCase):
-    def setUp(self) -> None:
-        self.store = baker.make(OnlineStore)
+    def setUp(self, pytz=None) -> None:
+        self.store = baker.make(OnlineStore, expired_on=datetime.now().date())
         self.category = baker.make(StoreProductCategory, store=self.store)
         self.product_1 = baker.make(
             StoreProduct, store=self.store, category=self.category, selling_price=50.22
@@ -67,14 +68,20 @@ class QuerysetsSingleQueryFetchPostgresTestCase(TransactionTestCase):
     def test_single_query_result_is_of_proper_types(self):
         with self.assertNumQueries(1):
             results = QuerysetsSingleQueryFetch(
-                querysets=[StoreProduct.objects.filter(id=self.product_1.id)]
+                querysets=[StoreProduct.objects.filter(id=self.product_1.id), OnlineStore.objects.filter(id=self.store.id)],
             ).execute()
 
-            self.assertEqual(len(results), 1)
+            self.assertEqual(len(results), 2)
             fetched_product_instance = results[0][0]
             self.assertIsInstance(fetched_product_instance, StoreProduct)
             self.assertEqual(fetched_product_instance.id, self.product_1.id)
             self.assertEqual(fetched_product_instance.selling_price, Decimal("50.22"))
+            fetched_store_instance = results[1][0]
+            self.assertIsInstance(fetched_store_instance, OnlineStore)
+            # add assertion to created_at and expired_on
+            self.assertEqual(type(fetched_store_instance.created_at), datetime)
+            self.assertEqual(type(fetched_store_instance.expired_on), datetime)
+
 
     def test_executing_single_queryset_which_is_always_empty_is_handled(self):
         """
