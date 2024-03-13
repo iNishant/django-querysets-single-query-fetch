@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from django.test import TransactionTestCase
@@ -12,8 +12,13 @@ from testapp.models import OnlineStore, StoreProduct, StoreProductCategory
 
 
 class QuerysetsSingleQueryFetchPostgresTestCase(TransactionTestCase):
-    def setUp(self, pytz=None) -> None:
-        self.store = baker.make(OnlineStore, expired_on=datetime.now().date())
+    def setUp(self) -> None:
+        self.today = datetime.now(tz=timezone.utc)
+        self.store = baker.make(OnlineStore, expired_on=self.today)
+        self.store = OnlineStore.objects.get(
+            id=self.store.id
+        )  # force refresh from db so that types are the default
+        # types
         self.category = baker.make(StoreProductCategory, store=self.store)
         self.product_1 = baker.make(
             StoreProduct, store=self.store, category=self.category, selling_price=50.22
@@ -83,9 +88,7 @@ class QuerysetsSingleQueryFetchPostgresTestCase(TransactionTestCase):
             self.assertIsInstance(fetched_store_instance, OnlineStore)
             # add assertion to created_at and expired_on
             self.assertEqual(fetched_store_instance.created_at, self.store.created_at)
-            self.assertEqual(
-                fetched_store_instance.expired_on.date(), self.store.expired_on
-            )
+            self.assertEqual(fetched_store_instance.expired_on, self.store.expired_on)
 
     def test_executing_single_queryset_which_is_always_empty_is_handled(self):
         """

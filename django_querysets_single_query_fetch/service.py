@@ -223,14 +223,15 @@ class QuerysetsSingleQueryFetch:
                 uuid_value = getattr(obj, field.attname)
                 if uuid_value is not None:
                     setattr(obj, field.attname, UUID(uuid_value))
+            elif issubclass(DateField, field.__class__):
+                # note datefield is subclass of datetimefield, so this check should come before
+                date_value = getattr(obj, field.attname)
+                if date_value is not None and isinstance(date_value, str):
+                    setattr(obj, field.attname, parse_datetime(date_value).date())
             elif issubclass(DateTimeField, field.__class__):
                 datetime_value = getattr(obj, field.attname)
                 if datetime_value is not None and isinstance(datetime_value, str):
                     setattr(obj, field.attname, parse_datetime(datetime_value))
-            elif issubclass(DateField, field.__class__):
-                date_value = getattr(obj, field.attname)
-                if date_value is not None and isinstance(date_value, str):
-                    setattr(obj, field.attname, parse_datetime(date_value).date())
         return obj
 
     def _get_instances_from_results_for_model_iterable(
