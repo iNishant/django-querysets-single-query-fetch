@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime
 from decimal import Decimal
 
 from django.test import TransactionTestCase
@@ -82,10 +82,8 @@ class QuerysetsSingleQueryFetchPostgresTestCase(TransactionTestCase):
             fetched_store_instance = results[1][0]
             self.assertIsInstance(fetched_store_instance, OnlineStore)
             # add assertion to created_at and expired_on
-            self.assertEqual(type(fetched_store_instance.created_at), datetime)
-            self.assertEqual(type(fetched_store_instance.expired_on), datetime)
-            # Assert that the timezone is preserved for `created_at` i.e., UTC
-            self.assertEqual(fetched_store_instance.created_at.tzinfo, timezone.utc)
+            self.assertEqual(fetched_store_instance.created_at, self.store.created_at)
+            self.assertEqual(fetched_store_instance.expired_on, self.store.expired_on)
 
     def test_executing_single_queryset_which_is_always_empty_is_handled(self):
         """
