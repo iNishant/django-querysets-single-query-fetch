@@ -328,8 +328,7 @@ class QuerysetsSingleQueryFetch:
         return queryset_results
 
     def execute(self) -> list[list[Any]]:
-        queryset_parallelization_enabled = getattr(settings, "QUERYSET_PARALLELIZATION_ENABLED", True)
-        if not queryset_parallelization_enabled:
+        if not getattr(settings, "QUERYSET_PARALLELIZATION_ENABLED", True):
             # just an emergency switch to disable this feature
             return [list(queryset) for queryset in self.querysets]
 
