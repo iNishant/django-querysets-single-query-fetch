@@ -311,13 +311,13 @@ class QuerysetsSingleQueryFetch:
                 else:
                     setattr(obj, field.name, rel_obj)
 
-            obj_field_cache = {}
+            obj_fields_cache = {}
             # because of json_agg some field level parsing/handling broke, patch it for prefetched objects
             for prefetched_obj_name, prefetched_obj in obj._state.fields_cache.items():
-                obj_field_cache[
+                obj_fields_cache[
                     prefetched_obj_name
                 ] = self._transform_object_to_handle_json_agg(obj=prefetched_obj)
-            obj._state.fields_cache = obj_field_cache
+            obj._state.fields_cache = obj_fields_cache
             instances.append(obj)
         return instances
 
