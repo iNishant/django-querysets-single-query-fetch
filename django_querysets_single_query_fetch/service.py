@@ -291,7 +291,6 @@ class QuerysetsSingleQueryFetch:
 
             # because of json_agg some field level parsing/handling broke, patch it for now
             # TODO: point field handling
-
             for rel_populator in related_populators:
                 rel_populator.populate(row, obj)
             if annotation_col_map:
@@ -299,7 +298,6 @@ class QuerysetsSingleQueryFetch:
                     setattr(obj, attr_name, row[col_pos])
 
             obj = self._transform_object_to_handle_json_agg(obj=obj)
-
             # Add the known related objects to the model.
             for field, rel_objs, rel_getter in known_related_objects:
                 # Avoid overwriting objects loaded by, e.g., select_related().
@@ -313,8 +311,14 @@ class QuerysetsSingleQueryFetch:
                 else:
                     setattr(obj, field.name, rel_obj)
 
+            obj_field_cache = {}
+            # because of json_agg some field level parsing/handling broke, patch it for prefetched objects
+            for prefetched_obj_name, prefetched_obj in obj._state.fields_cache.items():
+                obj_field_cache[
+                    prefetched_obj_name
+                ] = self._transform_object_to_handle_json_agg(obj=prefetched_obj)
+            obj._state.fields_cache = obj_field_cache
             instances.append(obj)
-
         return instances
 
     def _convert_raw_results_to_final_queryset_results(
