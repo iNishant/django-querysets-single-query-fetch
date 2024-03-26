@@ -212,6 +212,9 @@ class QuerysetsSingleQueryFetch:
         because of json_agg some default field level parsing/handling broke, patch it for now
         """
 
+        if not obj:
+            return obj
+
         for field in obj.__class__._meta.fields:
             if issubclass(DecimalField, field.__class__):
                 float_value = getattr(obj, field.attname)
@@ -221,7 +224,7 @@ class QuerysetsSingleQueryFetch:
                     )
             elif issubclass(UUIDField, field.__class__):
                 uuid_value = getattr(obj, field.attname)
-                if uuid_value is not None:
+                if uuid_value is not None and isinstance(uuid_value, str):
                     setattr(obj, field.attname, UUID(uuid_value))
             elif issubclass(DateField, field.__class__):
                 # note datefield is subclass of datetimefield, so this check should come before

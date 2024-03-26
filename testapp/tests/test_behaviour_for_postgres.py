@@ -20,9 +20,7 @@ class QuerysetsSingleQueryFetchPostgresTestCase(TransactionTestCase):
         )  # force refresh from db so that types are the default
         # types
         self.category = baker.make(StoreProductCategory, store=self.store)
-        self.product_1 = baker.make(
-            StoreProduct, store=self.store, category=self.category, selling_price=50.22
-        )
+        self.product_1 = baker.make(StoreProduct, store=self.store, selling_price=50.22)
         self.product_2 = baker.make(
             StoreProduct, store=self.store, category=self.category, selling_price=100.33
         )
@@ -48,8 +46,10 @@ class QuerysetsSingleQueryFetchPostgresTestCase(TransactionTestCase):
         with self.assertNumQueries(1):
             results = QuerysetsSingleQueryFetch(
                 querysets=[
+                    # in the below query StoreProduct's category field is having None value
+                    # this is to ensure select related models whose value returns None are also fetched
                     StoreProduct.objects.filter(id=self.product_1.id).select_related(
-                        "store"
+                        "store", "category"
                     ),
                     StoreProductCategory.objects.filter(id=self.category.id),
                 ]
@@ -71,6 +71,7 @@ class QuerysetsSingleQueryFetchPostgresTestCase(TransactionTestCase):
             self.assertEqual(store.id, self.store.id)
             self.assertEqual(store.created_at, self.store.created_at)
             self.assertEqual(store.expired_on, self.store.expired_on)
+            self.assertEqual(fetched_product_instance.category, None)
 
     def test_single_query_result_is_of_proper_types(self):
         with self.assertNumQueries(1):
