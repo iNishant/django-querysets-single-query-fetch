@@ -212,6 +212,9 @@ class QuerysetsSingleQueryFetch:
         because of json_agg some default field level parsing/handling broke, patch it for now
         """
 
+        if not obj:
+            return obj
+
         for field in obj.__class__._meta.fields:
             if issubclass(DecimalField, field.__class__):
                 float_value = getattr(obj, field.attname)
