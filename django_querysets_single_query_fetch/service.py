@@ -221,7 +221,7 @@ class QuerysetsSingleQueryFetch:
                     )
             elif issubclass(UUIDField, field.__class__):
                 uuid_value = getattr(obj, field.attname)
-                if uuid_value is not None:
+                if uuid_value is not None and isinstance(uuid_value, str):
                     setattr(obj, field.attname, UUID(uuid_value))
             elif issubclass(DateField, field.__class__):
                 # note datefield is subclass of datetimefield, so this check should come before
@@ -314,11 +314,9 @@ class QuerysetsSingleQueryFetch:
             obj_fields_cache = {}
             # because of json_agg some field level parsing/handling broke, patch it for prefetched objects
             for prefetched_obj_name, prefetched_obj in obj._state.fields_cache.items():
-                obj_fields_cache[prefetched_obj_name] = (
-                    self._transform_object_to_handle_json_agg(obj=prefetched_obj)
-                    if prefetched_obj
-                    else prefetched_obj
-                )
+                obj_fields_cache[
+                    prefetched_obj_name
+                ] = self._transform_object_to_handle_json_agg(obj=prefetched_obj)
             obj._state.fields_cache = obj_fields_cache
             instances.append(obj)
         return instances
