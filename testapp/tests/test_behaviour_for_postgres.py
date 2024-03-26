@@ -69,6 +69,8 @@ class QuerysetsSingleQueryFetchPostgresTestCase(TransactionTestCase):
                 fetched_product_instance.store
             )  # this should not make a new db query
             self.assertEqual(store.id, self.store.id)
+            self.assertEqual(store.created_at, self.store.created_at)
+            self.assertEqual(store.expired_on, self.store.expired_on)
 
     def test_single_query_result_is_of_proper_types(self):
         with self.assertNumQueries(1):
