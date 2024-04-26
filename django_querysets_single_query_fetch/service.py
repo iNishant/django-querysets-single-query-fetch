@@ -24,6 +24,7 @@ from django.db.models.query import (
     get_related_populators,
 )
 from django.utils.dateparse import parse_datetime
+from psycopg2._psycopg import QuotedString
 
 logger = logging.getLogger(__name__)
 
@@ -194,9 +195,8 @@ class QuerysetsSingleQueryFetch:
                 or isinstance(param, UUID)
                 or isinstance(param, datetime.datetime)
             ):
-                # '' will escape the quote
-                param = param.replace("'", "''")
-                param = f"'{param}'"
+                # this is to handle special char handling
+                param = QuotedString(f"{param}").getquoted().decode("utf-8")
             elif isinstance(param, int) or isinstance(param, float):
                 # type which can be passed as is
                 pass
