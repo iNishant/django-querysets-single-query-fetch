@@ -179,5 +179,5 @@ class QuerysetsSingleQueryFetchPostgresTestCase(TransactionTestCase):
         )
         product = QuerysetsSingleQueryFetch(
             querysets=[StoreProduct.objects.filter(name=name)]
-        ).execute()[0]
-        self.assertEqual(product_with_name_contain_quotes.id, product.id)
+        ).execute()
+        self.assertEqual(product_with_name_contain_quotes.id, product[0][0].id)
