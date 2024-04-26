@@ -194,6 +194,8 @@ class QuerysetsSingleQueryFetch:
                 or isinstance(param, UUID)
                 or isinstance(param, datetime.datetime)
             ):
+                # '' will escape the quote
+                param = param.replace("'", "''")
                 param = f"'{param}'"
             elif isinstance(param, int) or isinstance(param, float):
                 # type which can be passed as is
@@ -368,7 +370,6 @@ class QuerysetsSingleQueryFetch:
         non_empty_django_sqls_for_querysets = [
             sql for sql in django_sqls_for_querysets if sql
         ]
-
         if non_empty_django_sqls_for_querysets:
             raw_sql = f"""
                 SELECT
@@ -376,7 +377,6 @@ class QuerysetsSingleQueryFetch:
                         {', '.join([f"'{i}', {sql}" for i, sql in enumerate(non_empty_django_sqls_for_querysets)])}
                 )
             """
-
             with connections["default"].cursor() as cursor:
                 cursor.execute(raw_sql, params={})
                 raw_sql_result_dict: dict = cursor.fetchone()[0]
