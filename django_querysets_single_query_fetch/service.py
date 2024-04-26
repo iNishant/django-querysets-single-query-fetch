@@ -190,13 +190,11 @@ class QuerysetsSingleQueryFetch:
             return ""
 
         for param in params:
-            if (
-                isinstance(param, str)
-                or isinstance(param, UUID)
-                or isinstance(param, datetime.datetime)
-            ):
+            if isinstance(param, str):
                 # this is to handle special char handling
-                param = QuotedString(f"{param}").getquoted().decode("utf-8")
+                param = QuotedString(param).getquoted().decode("utf-8")
+            elif isinstance(param, UUID) or isinstance(param, datetime.datetime):
+                param = f"'{param}'"
             elif isinstance(param, int) or isinstance(param, float):
                 # type which can be passed as is
                 pass
@@ -319,9 +317,9 @@ class QuerysetsSingleQueryFetch:
             obj_fields_cache = {}
             # because of json_agg some field level parsing/handling broke, patch it for prefetched objects
             for prefetched_obj_name, prefetched_obj in obj._state.fields_cache.items():
-                obj_fields_cache[
-                    prefetched_obj_name
-                ] = self._transform_object_to_handle_json_agg(obj=prefetched_obj)
+                obj_fields_cache[prefetched_obj_name] = (
+                    self._transform_object_to_handle_json_agg(obj=prefetched_obj)
+                )
             obj._state.fields_cache = obj_fields_cache
             instances.append(obj)
         return instances
