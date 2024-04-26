@@ -24,7 +24,7 @@ from django.db.models.query import (
     get_related_populators,
 )
 from django.utils.dateparse import parse_datetime
-from psycopg2._psycopg import QuotedString
+from psycopg2.extensions import QuotedString
 
 logger = logging.getLogger(__name__)
 
