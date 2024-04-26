@@ -167,3 +167,17 @@ class QuerysetsSingleQueryFetchPostgresTestCase(TransactionTestCase):
         self.assertEqual(results[0], count_queryset.count())
         self.assertEqual(results[1], count_filter_queryset.count())
         self.assertEqual(results[2], list(queryset))
+
+    def test_quotes_inside_the_string_in_select_query_will_work(self):
+        name = "Ap's"
+        product_with_name_contain_quotes = baker.make(
+            StoreProduct,
+            store=self.store,
+            category=self.category,
+            selling_price=100.33,
+            name=name,
+        )
+        product = QuerysetsSingleQueryFetch(
+            querysets=[StoreProduct.objects.filter(name=name)]
+        ).execute()
+        self.assertEqual(product_with_name_contain_quotes.id, product[0][0].id)

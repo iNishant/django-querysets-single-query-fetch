@@ -24,6 +24,7 @@ from django.db.models.query import (
     get_related_populators,
 )
 from django.utils.dateparse import parse_datetime
+from psycopg2.extensions import QuotedString
 
 logger = logging.getLogger(__name__)
 
@@ -194,7 +195,8 @@ class QuerysetsSingleQueryFetch:
                 or isinstance(param, UUID)
                 or isinstance(param, datetime.datetime)
             ):
-                param = f"'{param}'"
+                # this is to handle special char handling
+                param = QuotedString(f"{param}").getquoted().decode("utf-8")
             elif isinstance(param, int) or isinstance(param, float):
                 # type which can be passed as is
                 pass
@@ -368,7 +370,6 @@ class QuerysetsSingleQueryFetch:
         non_empty_django_sqls_for_querysets = [
             sql for sql in django_sqls_for_querysets if sql
         ]
-
         if non_empty_django_sqls_for_querysets:
             raw_sql = f"""
                 SELECT
@@ -376,7 +377,6 @@ class QuerysetsSingleQueryFetch:
                         {', '.join([f"'{i}', {sql}" for i, sql in enumerate(non_empty_django_sqls_for_querysets)])}
                 )
             """
-
             with connections["default"].cursor() as cursor:
                 cursor.execute(raw_sql, params={})
                 raw_sql_result_dict: dict = cursor.fetchone()[0]
