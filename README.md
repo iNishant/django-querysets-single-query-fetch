@@ -34,7 +34,7 @@ from django_querysets_single_query_fetch.service import QuerysetsSingleQueryFetc
 querysets = [QuerysetCountWrapper(queryset=queryset1), queryset2, ...]
 results =  QuerysetsSingleQueryFetch(querysets=querysets) 
 
-assert results == [queryset.count(), list(queryset2), ...] 
+assert results == [queryset1.count(), list(queryset2), ...] 
 ```
 
 
