@@ -29,11 +29,12 @@ assert results == [list(queryset) for queryset in querysets]
 Fetching count of queryset using `QuerysetCountWrapper` (since `queryset.count()` is not a lazy method)
 
 ```py
-from service import QuerysetCountWrapper
+from django_querysets_single_query_fetch.service import QuerysetsSingleQueryFetch, QuerysetCountWrapper
 
-results =  QuerysetsSingleQueryFetch(querysets=QuerysetCountWrapper(queryset=queryset1), queryset2, ...) 
+querysets = [QuerysetCountWrapper(queryset=queryset1), queryset2, ...]
+results =  QuerysetsSingleQueryFetch(querysets=querysets) 
 
-assert results == [queryset1.count(), list(queryset2), ...]
+assert results == [queryset.count(), list(queryset2), ...] 
 ```
 
 
