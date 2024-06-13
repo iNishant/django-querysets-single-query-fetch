@@ -22,7 +22,20 @@ from django_querysets_single_query_fetch.service import QuerysetsSingleQueryFetc
 querysets = [queryset1, queryset2, ...]
 results = QuerysetsSingleQueryFetch(querysets=querysets).execute()
 
-assert results == [list(queryset) for queryset in querysets] 
+assert results == [list(queryset) for queryset in querysets]
+```
+
+Following tests pass (assuming no `prefetch_related` in querysets)
+
+```py
+
+# without (no. of queries is equal to no. of querysets)
+with self.assertNumQueries(len(querysets)):
+    results = [list(queryset) for queryset in querysets]
+
+# with (irrespective of no. of querysets, only one network call is made)
+with self.assertNumQueries(1):
+    results = QuerysetsSingleQueryFetch(querysets=querysets).execute()
 
 ```
 
