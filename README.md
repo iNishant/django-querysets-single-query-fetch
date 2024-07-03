@@ -60,6 +60,9 @@ assert results == [queryset1.count(), list(queryset2), ...]
 - Find a better package name? 😂 (think SEO)
 - Add a diagram in README depicting the time saved during network trips
 - Anything else which makes this better, open to ideas
+- Better readable way of accessing results (instead of `results[0]`, `results[1]`)
+- `FirstWrapper`, `LastWrapper` etc for lazy evaluating `.first()` and `.last()`
+- MySQL support as an experiment
 
   
 ## Notes

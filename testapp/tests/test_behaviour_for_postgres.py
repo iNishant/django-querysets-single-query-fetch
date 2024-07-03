@@ -192,3 +192,31 @@ class QuerysetsSingleQueryFetchPostgresTestCase(TransactionTestCase):
         ).execute()[0]
         self.assertEqual(len(stores), 1)
         self.assertEqual(self.store.id, stores[0].id)
+
+    def test_query_on_json_field_with_dict_data(self):
+        # postgres json field need not be a dict in python,
+        # it can be a list as well
+
+        # update one of the products to have a normal dict in json field
+        StoreProduct.objects.filter(id=self.product_1.id).update(meta={"foo": "bar"})
+
+        products = QuerysetsSingleQueryFetch(
+            querysets=[StoreProduct.objects.filter().order_by("id")]
+        ).execute()[0]
+        self.assertEqual(len(products), 2)
+        self.assertEqual(products[0].meta, {"foo": "bar"})
+        self.assertEqual(products[1].meta, {})
+
+    def test_query_on_json_field_with_list_data(self):
+        # postgres json field need not be a dict in python,
+        # it can be a list as well
+
+        # update one of the products to have a list in json field
+        StoreProduct.objects.filter(id=self.product_1.id).update(meta=[1, 2])
+
+        products = QuerysetsSingleQueryFetch(
+            querysets=[StoreProduct.objects.filter().order_by("id")]
+        ).execute()[0]
+        self.assertEqual(len(products), 2)
+        self.assertEqual(products[0].meta, [1, 2])  # product 1
+        self.assertEqual(products[1].meta, {})
