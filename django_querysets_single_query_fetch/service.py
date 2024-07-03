@@ -251,7 +251,8 @@ class QuerysetsSingleQueryFetch:
 
         for row_dict in results:
             for key, value in row_dict.items():
-                if isinstance(value, dict):
+                # both dict and list can be possible values for json field
+                if isinstance(value, dict) or isinstance(value, list):
                     row_dict[key] = json.dumps(value)
                 else:
                     pass

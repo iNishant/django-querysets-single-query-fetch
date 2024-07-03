@@ -19,3 +19,4 @@ class StoreProduct(models.Model):
         StoreProductCategory, on_delete=models.CASCADE, null=True
     )
     selling_price = models.DecimalField(max_digits=10, decimal_places=2)
+    meta = models.JSONField(default=dict)
