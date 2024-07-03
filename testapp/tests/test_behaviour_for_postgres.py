@@ -197,11 +197,11 @@ class QuerysetsSingleQueryFetchPostgresTestCase(TransactionTestCase):
         # postgres json field need not be a dict in python,
         # it can be a list as well
 
-        # update one of the products to have a list in json field
+        # update one of the products to have a normal dict in json field
         StoreProduct.objects.filter(id=self.product_1.id).update(meta={"foo": "bar"})
 
         products = QuerysetsSingleQueryFetch(
-            querysets=[StoreProduct.objects.filter()]
+            querysets=[StoreProduct.objects.filter().order_by("id")]
         ).execute()[0]
         self.assertEqual(len(products), 2)
         self.assertEqual(products[0].meta, {"foo": "bar"})
