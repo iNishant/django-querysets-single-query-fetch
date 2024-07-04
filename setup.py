@@ -2,7 +2,7 @@ import setuptools
 
 setuptools.setup(
     name="django_querysets_single_query_fetch",
-    version="0.0.10",
+    version="0.0.11",
     description="Execute multiple Django querysets in a single SQL query",
     long_description="Utility which executes multiple Django querysets over a single network/query call and returns results which would have been returned in normal evaluation of querysets",
     author="Nishant Singh",

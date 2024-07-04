@@ -382,6 +382,8 @@ class QuerysetsSingleQueryFetch:
         return queryset_results
 
     def _get_empty_queryset_value(self, queryset: QuerysetWrapperType) -> Any:
+        empty_sql_val: Any
+
         if isinstance(queryset, QuerysetCountWrapper):
             empty_sql_val = 0
         elif isinstance(queryset, QuerysetGetOrNoneWrapper):
