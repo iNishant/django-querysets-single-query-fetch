@@ -3,7 +3,7 @@ import json
 import logging
 import operator
 from decimal import Decimal
-from typing import Any, Union
+from typing import Any, List, Tuple, Union
 from uuid import UUID
 
 from django.core.exceptions import EmptyResultSet
@@ -38,6 +38,20 @@ class QuerysetCountWrapper:
         self.queryset = queryset
 
 
+class QuerysetGetOrNoneWrapper:
+    """
+    Wrapper around queryset to indicate that we want to fetch .get() or None
+    NOTE: this uses LIMIT 1 query so does not raise MultipleObjectsReturned
+    only returns the actual row or None (in case of no match)
+    """
+
+    def __init__(self, queryset: QuerySet) -> None:
+        self.queryset = queryset[:1]  # force limit 1
+
+
+QuerysetWrapperType = Union[QuerySet, QuerysetCountWrapper, QuerysetGetOrNoneWrapper]
+
+
 class QuerysetsSingleQueryFetch:
     """
     Executes multiple querysets in a single db query using json_build_object and returns results which
@@ -57,7 +71,7 @@ class QuerysetsSingleQueryFetch:
     assert results == [list(queryset) for queryset in querysets]
     """
 
-    def __init__(self, querysets: list[QuerySet]) -> None:
+    def __init__(self, querysets: list[QuerysetWrapperType]) -> None:
         self.querysets = querysets
 
     def _get_fetch_count_compiler_from_queryset(
@@ -154,22 +168,26 @@ class QuerysetsSingleQueryFetch:
         outer_query.select_related = False
         return outer_query.get_compiler(using, elide_empty=elide_empty)
 
-    def _get_compiler_from_queryset(
-        self, queryset: Union[QuerySet, QuerysetCountWrapper]
-    ) -> Any:
+    def _get_compiler_from_queryset(self, queryset: QuerysetWrapperType) -> Any:
         """
         if queryset is wrapped in QuerysetCountWrapper, then we need to call _get_fetch_count_compiler_from_queryset
         else we can call get_compiler directly from queryset's query
         """
-        return (
-            self._get_fetch_count_compiler_from_queryset(
+
+        if isinstance(queryset, QuerysetCountWrapper):
+            compiler = self._get_fetch_count_compiler_from_queryset(
                 queryset.queryset, using=queryset.queryset.db
             )
-            if isinstance(queryset, QuerysetCountWrapper)
-            else queryset.query.get_compiler(using=queryset.db)
-        )
+        elif isinstance(queryset, QuerysetGetOrNoneWrapper):
+            _queryset = queryset.queryset
+            compiler = _queryset.query.get_compiler(using=_queryset.db)
+        else:
+            # queryset is the normal django queryset not wrapped by anything
+            compiler = queryset.query.get_compiler(using=queryset.db)
 
-    def _get_django_sql_for_queryset(self, queryset: QuerySet) -> str:
+        return compiler
+
+    def _get_django_sql_for_queryset(self, queryset: QuerysetWrapperType) -> str:
         """
         gets the sql that django would normally execute for the queryset, return empty string
         if queryset will always return empty irrespective of params ()
@@ -178,7 +196,7 @@ class QuerysetsSingleQueryFetch:
         # handle param quoting for IN queries (TODO: find some psycopg2 way to do this)
         # this is a bit hacky, but it works for now
 
-        quoted_params = ()
+        quoted_params: Tuple[Any, ...] = ()
         compiler = self._get_compiler_from_queryset(queryset=queryset)
         try:
             sql, params = compiler.as_sql(
@@ -326,28 +344,39 @@ class QuerysetsSingleQueryFetch:
         return instances
 
     def _convert_raw_results_to_final_queryset_results(
-        self, queryset: QuerySet, queryset_raw_results: list
+        self, queryset: QuerysetWrapperType, queryset_raw_results: list
     ):
         if isinstance(queryset, QuerysetCountWrapper):
             queryset_results = queryset_raw_results[0]["__count"]
-        elif issubclass(queryset._iterable_class, ModelIterable):
-            queryset_results = self._get_instances_from_results_for_model_iterable(
-                queryset=queryset, results=queryset_raw_results
-            )
-        elif issubclass(queryset._iterable_class, ValuesIterable):
-            queryset_results = queryset_raw_results
-        elif issubclass(queryset._iterable_class, FlatValuesListIterable):
-            queryset_results = [
-                list(row_dict.values())[0] for row_dict in queryset_raw_results
-            ]
-        elif issubclass(queryset._iterable_class, ValuesListIterable):
-            queryset_results = [
-                list(row_dict.values()) for row_dict in queryset_raw_results
-            ]
         else:
-            raise ValueError(
-                f"Unsupported queryset iterable class: {queryset._iterable_class}"
-            )
+            if isinstance(queryset, QuerysetGetOrNoneWrapper):
+                django_queryset = queryset.queryset
+            else:
+                django_queryset = queryset
+
+            if issubclass(django_queryset._iterable_class, ModelIterable):
+                queryset_results = self._get_instances_from_results_for_model_iterable(
+                    queryset=django_queryset, results=queryset_raw_results
+                )
+            elif issubclass(django_queryset._iterable_class, ValuesIterable):
+                queryset_results = queryset_raw_results
+            elif issubclass(django_queryset._iterable_class, FlatValuesListIterable):
+                queryset_results = [
+                    list(row_dict.values())[0] for row_dict in queryset_raw_results
+                ]
+            elif issubclass(django_queryset._iterable_class, ValuesListIterable):
+                queryset_results = [
+                    list(row_dict.values()) for row_dict in queryset_raw_results
+                ]
+            else:
+                raise ValueError(
+                    f"Unsupported queryset iterable class: {django_queryset._iterable_class}"
+                )
+
+        if isinstance(queryset, QuerysetGetOrNoneWrapper):
+            # convert queryset_results to either row or none
+            queryset_results = queryset_results[0] if queryset_results else None
+
         return queryset_results
 
     def execute(self) -> list[list[Any]]:
@@ -356,7 +385,7 @@ class QuerysetsSingleQueryFetch:
             for queryset in self.querysets
         ]
 
-        final_result_list = []
+        final_result_list: List[Any] = []
 
         for queryset_sql in django_sqls_for_querysets:
             if not queryset_sql:
