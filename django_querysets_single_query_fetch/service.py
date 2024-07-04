@@ -51,6 +51,8 @@ class QuerysetGetOrNoneWrapper:
 
 QuerysetWrapperType = Union[QuerySet, QuerysetCountWrapper, QuerysetGetOrNoneWrapper]
 
+RESULT_PLACEHOLDER = object()
+
 
 class QuerysetsSingleQueryFetch:
     """
@@ -379,6 +381,17 @@ class QuerysetsSingleQueryFetch:
 
         return queryset_results
 
+    def _get_empty_queryset_value(self, queryset: QuerysetWrapperType) -> Any:
+        if isinstance(queryset, QuerysetCountWrapper):
+            empty_sql_val = 0
+        elif isinstance(queryset, QuerysetGetOrNoneWrapper):
+            empty_sql_val = None
+        else:
+            # normal queryset
+            empty_sql_val = []
+
+        return empty_sql_val
+
     def execute(self) -> list[list[Any]]:
         django_sqls_for_querysets = [
             self._get_django_sql_for_queryset(queryset=queryset)
@@ -387,12 +400,14 @@ class QuerysetsSingleQueryFetch:
 
         final_result_list: List[Any] = []
 
-        for queryset_sql in django_sqls_for_querysets:
+        for queryset_sql, queryset in zip(django_sqls_for_querysets, self.querysets):
             if not queryset_sql:
-                final_result_list.append([])
+                final_result_list.append(
+                    self._get_empty_queryset_value(queryset=queryset)
+                )
             else:
                 final_result_list.append(
-                    None
+                    RESULT_PLACEHOLDER
                 )  # will be replaced by actual result below
 
         non_empty_django_sqls_for_querysets = [
@@ -415,8 +430,8 @@ class QuerysetsSingleQueryFetch:
         final_result = []
         index = 0
         for queryset, result in zip(self.querysets, final_result_list):
-            if result is not None:
-                # empty case EmptyResultSet
+            if result is not RESULT_PLACEHOLDER:
+                # empty sql case
                 final_result.append(result)
                 continue
             final_result.append(

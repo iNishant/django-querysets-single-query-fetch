@@ -24,13 +24,7 @@ class QuerysetCountWrapperPostgresTestCase(TransactionTestCase):
             StoreProduct, store=self.store, category=self.category, selling_price=100.33
         )
 
-    def test_fetch_count(self):
-        """
-        - test fetch count works in single query
-        _ test fetch count works with filter querysets
-        _ test fetch count works with other querysets
-        """
-        # test fetch count works in single query
+    def test_works_in_simple_case(self):
         count_queryset = StoreProduct.objects.filter()
         with self.assertNumQueries(1):
             results = QuerysetsSingleQueryFetch(
@@ -41,7 +35,7 @@ class QuerysetCountWrapperPostgresTestCase(TransactionTestCase):
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0], count_queryset.count())
 
-        # test fetch count works with filter querysets
+    def test_works_with_filtered_queryset(self):
         count_filter_queryset = StoreProduct.objects.filter(id=self.product_1.id)
         with self.assertNumQueries(1):
             results = QuerysetsSingleQueryFetch(
@@ -52,7 +46,7 @@ class QuerysetCountWrapperPostgresTestCase(TransactionTestCase):
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0], count_filter_queryset.count())
 
-        # test fetch count works with other querysets
+    def test_works_with_other_querysets(self):
         count_queryset = StoreProduct.objects.filter()
         count_filter_queryset = StoreProduct.objects.filter(id=self.product_1.id)
         queryset = StoreProduct.objects.filter()
@@ -68,3 +62,13 @@ class QuerysetCountWrapperPostgresTestCase(TransactionTestCase):
         self.assertEqual(results[0], count_queryset.count())
         self.assertEqual(results[1], count_filter_queryset.count())
         self.assertEqual(results[2], list(queryset))
+
+    def test_count_is_returned_as_zero_for_empty_queryset(self):
+        with self.assertNumQueries(0):
+            results = QuerysetsSingleQueryFetch(
+                querysets=[
+                    QuerysetCountWrapper(StoreProduct.objects.none()),
+                ]
+            ).execute()
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0], 0)

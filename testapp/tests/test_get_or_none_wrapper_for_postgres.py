@@ -60,3 +60,13 @@ class QuerysetGetOrNoneWrapperPostgresTestCase(TransactionTestCase):
         self.assertTrue(
             (product.id == self.product_1.id) or (product.id == self.product_2.id)
         )
+
+    def test_get_or_none_wrapper_with_empty_queryset(self):
+        with self.assertNumQueries(0):
+            results = QuerysetsSingleQueryFetch(
+                querysets=[
+                    QuerysetGetOrNoneWrapper(StoreProduct.objects.none()),
+                ]
+            ).execute()
+        self.assertEqual(len(results), 1)
+        self.assertIsNone(results[0])
