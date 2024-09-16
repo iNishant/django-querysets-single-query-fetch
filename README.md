@@ -45,11 +45,10 @@ Fetching count of queryset using `QuerysetCountWrapper` (since `queryset.count()
 from django_querysets_single_query_fetch.service import QuerysetsSingleQueryFetch, QuerysetCountWrapper
 
 querysets = [QuerysetCountWrapper(queryset=queryset1), queryset2, ...]
-results =  QuerysetsSingleQueryFetch(querysets=querysets) 
+results =  QuerysetsSingleQueryFetch(querysets=querysets)
 
-assert results == [queryset1.count(), list(queryset2), ...] 
+assert results == [queryset1.count(), list(queryset2), ...]
 ```
-
 
 ## Contribution suggestions
 
@@ -65,7 +64,16 @@ assert results == [queryset1.count(), list(queryset2), ...]
 - MySQL support as an experiment
 - "How it works" section/diagram?
 
-  
 ## Notes
 
 - Note parallelisation by postgres is not guaranteed, as it depends on lot of config params (max_parallel_workers_per_gather, min_parallel_table_scan_size, max_parallel_workers etc). Even without parallelisation, this can be faster than normal one-by-one evaluation of querysets due to reduced no of network trips.
+
+## Compatibility
+
+This package is tested against the following versions:
+
+- Python: 3.9, 3.10, 3.11, 3.12
+- Django: 3.2, 4.0, 4.1, 4.2, 5.0
+- Database: PostgreSQL
+
+Please check the GitHub Actions workflow for the most up-to-date compatibility matrix.
