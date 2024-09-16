@@ -2,7 +2,7 @@
 
 Executes multiple querysets over a single db query and returns results which would have been returned in normal evaluation of querysets. This can help in critical paths to avoid network/connection-pooler latency if db cpu/mem are nowhere near exhaustion. Ideal use case is fetching multiple small and optimised independent querysets where above mentioned latencies can dominate total execution time.
 
-Supports only Postgres as of now
+Supports PostgreSQL and SQLite
 
 > [!NOTE]
 > The performance gains from this utility were pretty significant for our use cases so in some places we have added quick hacks (see `_transform_object_to_handle_json_agg`) to get around some parsing/conversion issues where raw values are not parsed properly into their python types (for eg. datetime, UUID, Decimal). This is usually done in [from_db_value](https://docs.djangoproject.com/en/5.0/ref/models/fields/#django.db.models.Field.from_db_value) for custom fields and by database-specific backends for django supported fields (psycopg for postgres). If you encounter a similar issue, just send a patch with a quick hack. For a complete solution, we would have to dive deeper into psycopg/postgres and its handling of `json_agg` output.
@@ -45,11 +45,10 @@ Fetching count of queryset using `QuerysetCountWrapper` (since `queryset.count()
 from django_querysets_single_query_fetch.service import QuerysetsSingleQueryFetch, QuerysetCountWrapper
 
 querysets = [QuerysetCountWrapper(queryset=queryset1), queryset2, ...]
-results =  QuerysetsSingleQueryFetch(querysets=querysets) 
+results =  QuerysetsSingleQueryFetch(querysets=querysets)
 
-assert results == [queryset1.count(), list(queryset2), ...] 
+assert results == [queryset1.count(), list(queryset2), ...]
 ```
-
 
 ## Contribution suggestions
 
@@ -65,7 +64,16 @@ assert results == [queryset1.count(), list(queryset2), ...]
 - MySQL support as an experiment
 - "How it works" section/diagram?
 
-  
 ## Notes
 
 - Note parallelisation by postgres is not guaranteed, as it depends on lot of config params (max_parallel_workers_per_gather, min_parallel_table_scan_size, max_parallel_workers etc). Even without parallelisation, this can be faster than normal one-by-one evaluation of querysets due to reduced no of network trips.
+
+## Compatibility
+
+This package is tested against the following versions:
+
+- Python: 3.9, 3.10, 3.11, 3.12
+- Django: 3.2, 4.0, 4.1, 4.2, 5.0
+- Databases: PostgreSQL, SQLite
+
+Please check the GitHub Actions workflow for the most up-to-date compatibility matrix.

@@ -12,12 +12,19 @@ permissions:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.9, "3.10", "3.11", "3.12"]
+        django-version: [3.2, 4.0, 4.1, 4.2, 5.0]
+        exclude:
+          # Django 5.0+ requires Python 3.10+
+          - python-version: 3.9
+            django-version: 5.0
 
     services:
       postgres:
-        image: postgres
+        image: postgres:13
         env:
           POSTGRES_PASSWORD: postgres
         options: >-
@@ -29,17 +36,21 @@ jobs:
           - 5432:5432
 
     steps:
-    - uses: actions/checkout@v3
-    - name: Set up Python 3.9
-      uses: actions/setup-python@v3
-      with:
-        python-version: "3.9"
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install -r dev-requirements.txt
-    - name: Run tests
-      run: |
-        ./check-lint.sh
-        python manage.py test -v 3 --no-input
+      - uses: actions/checkout@v3
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r dev-requirements.txt
+          pip install Django==${{ matrix.django-version }}
+      - name: Run tests with PostgreSQL
+        run: |
+          ./check-lint.sh
+          python manage.py test -v 3 --no-input
+      - name: Run tests with SQLite
+        run: |
+          python manage.py test -v 3 --no-input --settings=your_project.settings_sqlite

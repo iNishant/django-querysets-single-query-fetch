@@ -225,7 +225,10 @@ class QuerysetsSingleQueryFetch:
 
         django_sql = sql % quoted_params
 
-        return f"(SELECT COALESCE(json_agg(item), '[]') FROM ({django_sql}) item)"
+        if connections['default'].vendor == 'sqlite':
+            return f"SELECT json_group_array(json_object('item', *)) FROM ({django_sql})"
+        else:
+            return f"(SELECT COALESCE(json_agg(item), '[]') FROM ({django_sql}) item)"
 
     def _transform_object_to_handle_json_agg(self, obj):
         """
@@ -408,25 +411,25 @@ class QuerysetsSingleQueryFetch:
                     self._get_empty_queryset_value(queryset=queryset)
                 )
             else:
-                final_result_list.append(
-                    RESULT_PLACEHOLDER
-                )  # will be replaced by actual result below
+                final_result_list.append(RESULT_PLACEHOLDER)
 
         non_empty_django_sqls_for_querysets = [
             sql for sql in django_sqls_for_querysets if sql
         ]
         if non_empty_django_sqls_for_querysets:
-            raw_sql = f"""
-                SELECT
-                    json_build_object(
-                        {', '.join([f"'{i}', {sql}" for i, sql in enumerate(non_empty_django_sqls_for_querysets)])}
-                )
-            """
-            with connections["default"].cursor() as cursor:
+            connection = connections['default']
+            if connection.vendor == 'sqlite':
+                raw_sql = self._get_sqlite_raw_sql(non_empty_django_sqls_for_querysets)
+            else:
+                raw_sql = self._get_postgres_raw_sql(non_empty_django_sqls_for_querysets)
+
+            with connection.cursor() as cursor:
                 cursor.execute(raw_sql, params={})
-                raw_sql_result_dict: dict = cursor.fetchone()[0]
+                if connection.vendor == 'sqlite':
+                    raw_sql_result_dict = self._process_sqlite_result(cursor.fetchall())
+                else:
+                    raw_sql_result_dict = cursor.fetchone()[0]
         else:
-            # all querysets are always empty (EmptyResultSet)
             raw_sql_result_dict = {}
 
         final_result = []
@@ -445,3 +448,27 @@ class QuerysetsSingleQueryFetch:
             index += 1
 
         return final_result
+
+    def _get_postgres_raw_sql(self, sqls):
+        return f"""
+            SELECT
+                json_build_object(
+                    {', '.join([f"'{i}', {sql}" for i, sql in enumerate(sqls)])}
+                )
+        """
+
+    def _get_sqlite_raw_sql(self, sqls):
+        return f"""
+            SELECT
+                {', '.join([f"({sql}) AS result_{i}" for i, sql in enumerate(sqls)])}
+        """
+
+    def _process_sqlite_result(self, result):
+        raw_sql_result_dict = {}
+        for i, row in enumerate(result[0]):
+            try:
+                raw_sql_result_dict[str(i)] = json.loads(row)
+            except json.JSONDecodeError:
+                # If it's not JSON, wrap it in a list to maintain consistency
+                raw_sql_result_dict[str(i)] = [{"value": row}]
+        return raw_sql_result_dict
