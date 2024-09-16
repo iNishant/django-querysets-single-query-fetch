@@ -225,8 +225,10 @@ class QuerysetsSingleQueryFetch:
 
         django_sql = sql % quoted_params
 
-        if connections['default'].vendor == 'sqlite':
-            return f"SELECT json_group_array(json_object('item', *)) FROM ({django_sql})"
+        if connections["default"].vendor == "sqlite":
+            return (
+                f"SELECT json_group_array(json_object('item', *)) FROM ({django_sql})"
+            )
         else:
             return f"(SELECT COALESCE(json_agg(item), '[]') FROM ({django_sql}) item)"
 
@@ -417,15 +419,17 @@ class QuerysetsSingleQueryFetch:
             sql for sql in django_sqls_for_querysets if sql
         ]
         if non_empty_django_sqls_for_querysets:
-            connection = connections['default']
-            if connection.vendor == 'sqlite':
+            connection = connections["default"]
+            if connection.vendor == "sqlite":
                 raw_sql = self._get_sqlite_raw_sql(non_empty_django_sqls_for_querysets)
             else:
-                raw_sql = self._get_postgres_raw_sql(non_empty_django_sqls_for_querysets)
+                raw_sql = self._get_postgres_raw_sql(
+                    non_empty_django_sqls_for_querysets
+                )
 
             with connection.cursor() as cursor:
                 cursor.execute(raw_sql, params={})
-                if connection.vendor == 'sqlite':
+                if connection.vendor == "sqlite":
                     raw_sql_result_dict = self._process_sqlite_result(cursor.fetchall())
                 else:
                     raw_sql_result_dict = cursor.fetchone()[0]
