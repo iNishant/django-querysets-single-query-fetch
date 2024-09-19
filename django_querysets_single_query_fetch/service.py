@@ -83,7 +83,7 @@ class QuerysetsSingleQueryFetch:
         slightly modified copy paste from get_count and get_aggregation in django.db.models.sql.compiler
         """
         obj = queryset.query.clone()
-        obj.add_annotation(Count("*"), alias="__count", is_summary=True)
+        obj.add_annotation(Count("*"), alias="__count")
         added_aggregate_names = ["__count"]
         existing_annotations = [
             annotation

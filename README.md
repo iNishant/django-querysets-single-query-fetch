@@ -1,6 +1,6 @@
 ## Django Querysets Single Query Fetch
 
-Executes multiple querysets over a single db query and returns results which would have been returned in normal evaluation of querysets. This can help in critical paths to avoid network/connection-pooler latency if db cpu/mem are nowhere near exhaustion. Ideal use case is fetching multiple small and optimised independent querysets where above mentioned latencies can dominate total execution time.
+Executes multiple querysets over a single db query and returns results which would have been returned in normal evaluation of querysets. This can help in critical paths to avoid network latency. Ideal use case is fetching multiple small and optimised independent querysets where above mentioned latencies can dominate total execution time.
 
 Supports only Postgres as of now
 
@@ -45,11 +45,10 @@ Fetching count of queryset using `QuerysetCountWrapper` (since `queryset.count()
 from django_querysets_single_query_fetch.service import QuerysetsSingleQueryFetch, QuerysetCountWrapper
 
 querysets = [QuerysetCountWrapper(queryset=queryset1), queryset2, ...]
-results =  QuerysetsSingleQueryFetch(querysets=querysets) 
+results =  QuerysetsSingleQueryFetch(querysets=querysets)
 
-assert results == [queryset1.count(), list(queryset2), ...] 
+assert results == [queryset1.count(), list(queryset2), ...]
 ```
-
 
 ## Contribution suggestions
 
@@ -65,7 +64,6 @@ assert results == [queryset1.count(), list(queryset2), ...]
 - MySQL support as an experiment
 - "How it works" section/diagram?
 
-  
 ## Notes
 
 - Note parallelisation by postgres is not guaranteed, as it depends on lot of config params (max_parallel_workers_per_gather, min_parallel_table_scan_size, max_parallel_workers etc). Even without parallelisation, this can be faster than normal one-by-one evaluation of querysets due to reduced no of network trips.
