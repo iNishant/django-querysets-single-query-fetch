@@ -9,7 +9,6 @@ on:
 
 permissions:
   contents: read
-
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -21,6 +20,7 @@ jobs:
           # Django 5.0+ requires Python 3.10+
           - python-version: "3.9"
             django-version: "5.0"
+      max-parallel: 5
 
     services:
       postgres:
