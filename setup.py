@@ -10,7 +10,7 @@ setuptools.setup(
     license="Apache Software License",
     packages=["django_querysets_single_query_fetch"],
     zip_safe=False,
-    install_requires=["django>3"],
+    install_requires=["django>=4.0,<5.2"],
     python_requires=">=3.9",
     include_package_data=True,
     package_data={},
