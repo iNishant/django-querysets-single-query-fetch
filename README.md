@@ -1,6 +1,6 @@
 ## Django Querysets Single Query Fetch
 
-Executes multiple querysets over a single db query and returns results which would have been returned in normal evaluation of querysets. This can help in critical paths to avoid network/connection-pooler latency if db cpu/mem are nowhere near exhaustion. Ideal use case is fetching multiple small and optimised independent querysets where above mentioned latencies can dominate total execution time.
+Executes multiple querysets over a single db query and returns results which would have been returned in normal evaluation of querysets. This can help in critical paths to avoid network latency. Ideal use case is fetching multiple small and optimised independent querysets where above mentioned latencies can dominate total execution time.
 
 Supports only Postgres as of now
 
