@@ -54,5 +54,5 @@ jobs:
       - name: Run tests
         run: |
           ./check-lint.sh
-          psql -c 'create database testdb;' -U postgres -h localhost
+          PGPASSWORD=postgres createdb -h localhost -U postgres testdb
           python manage.py test -v 3 --no-input
