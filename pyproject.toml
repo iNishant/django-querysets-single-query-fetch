@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "django-querysets-single-query-fetch"
-version = "0.0.12"
+version = "0.0.13"
 description = "Execute multiple Django querysets in a single SQL query"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -30,7 +30,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "django>=4.0,<5.2", # From setup.py
+    "django>=4.0,<5.3", # Updated to include Django 5.2
     "psycopg2==2.9.9" # Keep specific version for now
 ]
 
