@@ -47,9 +47,9 @@ jobs:
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
           source "$HOME/.cargo/env"
-          uv pip install -r requirements.txt
-          uv pip install -r dev-requirements.txt
-          uv pip install Django==${{ matrix.django-version }}
+          uv pip install --system -r requirements.txt
+          uv pip install --system -r dev-requirements.txt
+          uv pip install --system Django==${{ matrix.django-version }}
       - name: Run tests
         run: |
           ./check-lint.sh
