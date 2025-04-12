@@ -10,7 +10,7 @@ Supports only Postgres as of now
 ## Installation
 
 ```bash
-pip install django-querysets-single-query-fetch
+uv pip install django-querysets-single-query-fetch
 ```
 
 ## Usage

@@ -43,12 +43,13 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install dependencies
+      - name: Install uv and dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -r dev-requirements.txt
-          pip install Django==${{ matrix.django-version }}
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          source "$HOME/.cargo/env"
+          uv pip install -r requirements.txt
+          uv pip install -r dev-requirements.txt
+          uv pip install Django==${{ matrix.django-version }}
       - name: Run tests
         run: |
           ./check-lint.sh
