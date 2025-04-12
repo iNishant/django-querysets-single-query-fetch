@@ -23,7 +23,8 @@ jobs:
       run: |
         curl -LsSf https://astral.sh/uv/install.sh | sh
         source "$HOME/.cargo/env"
-        uv pip install --system -r dev-requirements.txt
+        # Install build/dev dependencies needed for release
+        uv pip install --system .[dev]
     - name: Build and release
       run: |
         python -m build

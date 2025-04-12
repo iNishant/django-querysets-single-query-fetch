@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=42"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "django-querysets-single-query-fetch"
+version = "0.0.12"
+description = "Execute multiple Django querysets in a single SQL query"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "Apache-2.0" # SPDX identifier
+authors = [
+    { name = "Nishant Singh", email = "nishant.singh@mydukaan.io" }
+]
+classifiers = [
+    "Development Status :: 4 - Beta", # Assuming based on version < 1.0
+    "Framework :: Django",
+    "Framework :: Django :: 4.0",
+    "Framework :: Django :: 4.1",
+    "Framework :: Django :: 4.2",
+    "Framework :: Django :: 5.0",
+    "Framework :: Django :: 5.1",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Database",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "django>=4.0,<5.2", # From setup.py
+    "psycopg2==2.9.9" # Keep specific version for now
+]
+
+[project.urls]
+Homepage = "https://github.com/iNishant/django-querysets-single-query-fetch"
+Repository = "https://github.com/iNishant/django-querysets-single-query-fetch"
+
+[project.optional-dependencies]
+dev = [
+    "ruff==0.3.7",
+    "model-bakery==1.17.0",
+    "build==1.2.1",
+    "twine==5.0.0",
+    "mypy==1.10.0",
+    "mypy-extensions==1.0.0"
+]
+
+[tool.ruff]
+
+[tool.setuptools.packages.find]
+include = ["django_querysets_single_query_fetch*"]
+exclude = ["testapp*", "testproject*"]
+
+# Assuming default ruff config unless specified elsewhere
+
+[tool.mypy]
+# Assuming default mypy config unless specified elsewhere
