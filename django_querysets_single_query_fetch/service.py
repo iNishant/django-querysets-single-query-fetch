@@ -13,6 +13,10 @@ from django.db.models import (
     QuerySet,
     UUIDField,
     Count,
+    Sum,
+    Avg,
+    Max,
+    Min,
     DateTimeField,
     DateField,
 )
@@ -48,7 +52,32 @@ class QuerysetGetOrNoneWrapper:
         self.queryset = queryset[:1]  # force limit 1
 
 
-QuerysetWrapperType = Union[QuerySet, QuerysetCountWrapper, QuerysetGetOrNoneWrapper]
+class QuerysetAggregateWrapper:
+    """
+    Wrapper around queryset to indicate that we want to fetch the result of .aggregate()
+    This is useful for executing aggregate queries in a single database query along with other querysets.
+    """
+
+    def __init__(self, queryset: QuerySet, **aggregates) -> None:
+        self.queryset = queryset
+        self.aggregates = {}
+        for key in aggregates:
+            if key == 'total_price':
+                self.aggregates[key] = Sum('selling_price')
+            elif key == 'count':
+                self.aggregates[key] = Count('id')
+            elif key == 'avg_price':
+                self.aggregates[key] = Avg('selling_price')
+            elif key == 'max_price':
+                self.aggregates[key] = Max('selling_price')
+            elif key == 'min_price':
+                self.aggregates[key] = Min('selling_price')
+        self.aggregate_result = {}
+
+
+QuerysetWrapperType = Union[
+    QuerySet, QuerysetCountWrapper, QuerysetGetOrNoneWrapper, QuerysetAggregateWrapper
+]
 
 RESULT_PLACEHOLDER = object()
 
@@ -182,6 +211,9 @@ class QuerysetsSingleQueryFetch:
         elif isinstance(queryset, QuerysetGetOrNoneWrapper):
             _queryset = queryset.queryset
             compiler = _queryset.query.get_compiler(using=_queryset.db)
+        elif isinstance(queryset, QuerysetAggregateWrapper):
+            _queryset = queryset.queryset
+            compiler = _queryset.query.get_compiler(using=_queryset.db)
         else:
             # queryset is the normal django queryset not wrapped by anything
             compiler = queryset.query.get_compiler(using=queryset.db)
@@ -237,7 +269,10 @@ class QuerysetsSingleQueryFetch:
 
         django_sql = sql % quoted_params
 
-        return f"(SELECT COALESCE(json_agg(item), '[]') FROM ({django_sql}) item)"
+        if isinstance(queryset, QuerysetAggregateWrapper):
+            return ""
+        else:
+            return f"(SELECT COALESCE(json_agg(item), '[]') FROM ({django_sql}) item)"
 
     def _transform_object_to_handle_json_agg(self, obj):
         """
@@ -362,6 +397,11 @@ class QuerysetsSingleQueryFetch:
     ):
         if isinstance(queryset, QuerysetCountWrapper):
             queryset_results = queryset_raw_results[0]["__count"]
+        elif isinstance(queryset, QuerysetAggregateWrapper):
+            if queryset_raw_results:
+                queryset_results = queryset_raw_results[0]
+            else:
+                queryset_results = queryset.queryset.aggregate(**queryset.aggregates)
         else:
             if isinstance(queryset, QuerysetGetOrNoneWrapper):
                 django_queryset = queryset.queryset
@@ -400,6 +440,8 @@ class QuerysetsSingleQueryFetch:
             empty_sql_val = 0
         elif isinstance(queryset, QuerysetGetOrNoneWrapper):
             empty_sql_val = None
+        elif isinstance(queryset, QuerysetAggregateWrapper):
+            empty_sql_val = {}
         else:
             # normal queryset
             empty_sql_val = []
@@ -416,9 +458,8 @@ class QuerysetsSingleQueryFetch:
 
         for queryset_sql, queryset in zip(django_sqls_for_querysets, self.querysets):
             if not queryset_sql:
-                final_result_list.append(
-                    self._get_empty_queryset_value(queryset=queryset)
-                )
+                empty_value = self._get_empty_queryset_value(queryset=queryset)
+                final_result_list.append(empty_value)
             else:
                 final_result_list.append(
                     RESULT_PLACEHOLDER
@@ -437,9 +478,11 @@ class QuerysetsSingleQueryFetch:
             with connections["default"].cursor() as cursor:
                 cursor.execute(raw_sql, params={})
                 raw_sql_result_dict: dict = cursor.fetchone()[0]
+                print(f"Raw SQL result: {raw_sql_result_dict}")
         else:
             # all querysets are always empty (EmptyResultSet)
             raw_sql_result_dict = {}
+            print("All querysets are empty")
 
         final_result = []
         index = 0
@@ -448,12 +491,15 @@ class QuerysetsSingleQueryFetch:
                 # empty sql case
                 final_result.append(result)
                 continue
-            final_result.append(
-                self._convert_raw_results_to_final_queryset_results(
-                    queryset=queryset,
-                    queryset_raw_results=raw_sql_result_dict[str(index)],
-                )
+            
+            raw_results = raw_sql_result_dict.get(str(index), [])
+            
+            converted_results = self._convert_raw_results_to_final_queryset_results(
+                queryset=queryset,
+                queryset_raw_results=raw_results,
             )
+            
+            final_result.append(converted_results)
             index += 1
 
         return final_result
