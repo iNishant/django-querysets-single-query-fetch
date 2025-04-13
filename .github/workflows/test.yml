@@ -26,6 +26,8 @@ jobs:
             django-version: "5.2"
           - django-version: "4.0"
             psycopg-package: "psycopg"
+          - django-version: "4.1"
+            psycopg-package: "psycopg"
       max-parallel: 20
 
     services:
