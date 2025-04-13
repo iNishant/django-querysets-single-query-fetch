@@ -56,8 +56,8 @@ class QuerysetAggregateWrapper:
     """
     Wrapper around queryset to indicate that we want to fetch the result of .aggregate()
     This is useful for executing aggregate queries in a single database query along with other querysets.
-    
-    Since aggregates don't support lazy evaluation, we need to store the queryset and 
+
+    Since aggregates don't support lazy evaluation, we need to store the queryset and
     the aggregate expressions separately.
     """
 
@@ -218,15 +218,17 @@ class QuerysetsSingleQueryFetch:
             return str(param)
         if isinstance(param, bool):
             return "TRUE" if param else "FALSE"
-        
+
         param_str = str(param)
-        
+
         try:
             from psycopg import sql
+
             return sql.quote(param_str)
         except ImportError:
             try:
                 from psycopg2.extensions import QuotedString
+
                 return QuotedString(param_str).getquoted().decode("utf-8")
             except ImportError:
                 raise ImportError("psycopg or psycopg2 not installed")
@@ -268,10 +270,9 @@ class QuerysetsSingleQueryFetch:
         django_sql = sql % quoted_params
 
         if isinstance(queryset, QuerysetAggregateWrapper):
-            
             compiler = self._get_compiler_from_queryset(queryset.queryset)
             sql, params = compiler.as_sql()
-            
+
             if isinstance(params, dict):
                 quoted_params = {}
                 for key, value in params.items():
@@ -282,7 +283,7 @@ class QuerysetsSingleQueryFetch:
                 for value in params:
                     quoted_params.append(self._get_sanitized_sql_param(value))
                 base_sql = sql % tuple(quoted_params)
-            
+
             aggregate_sql_parts = []
             for key, value in queryset.aggregate_expressions.items():
                 if isinstance(value, Sum):
@@ -290,7 +291,7 @@ class QuerysetsSingleQueryFetch:
                     aggregate_sql_parts.append(f"'{key}', SUM(subquery.{field})")
                 elif isinstance(value, Count):
                     field = value.source_expressions[0].name
-                    if field == '*':
+                    if field == "*":
                         aggregate_sql_parts.append(f"'{key}', COUNT(*)")
                     else:
                         aggregate_sql_parts.append(f"'{key}', COUNT(subquery.{field})")
@@ -303,7 +304,7 @@ class QuerysetsSingleQueryFetch:
                 elif isinstance(value, Min):
                     field = value.source_expressions[0].name
                     aggregate_sql_parts.append(f"'{key}', MIN(subquery.{field})")
-            
+
             if aggregate_sql_parts:
                 return f"(SELECT array_to_json(array[row(json_build_object({', '.join(aggregate_sql_parts)}))]) FROM ({base_sql}) AS subquery)"
             else:
@@ -436,10 +437,12 @@ class QuerysetsSingleQueryFetch:
             queryset_results = queryset_raw_results[0]["__count"]
         elif isinstance(queryset, QuerysetAggregateWrapper):
             if queryset_raw_results and len(queryset_raw_results) > 0:
-                nested_result = queryset_raw_results[0].get('f1', {})
+                nested_result = queryset_raw_results[0].get("f1", {})
                 queryset_results = nested_result
             else:
-                queryset_results = {key: None for key in queryset.aggregate_expressions.keys()}
+                queryset_results = {
+                    key: None for key in queryset.aggregate_expressions.keys()
+                }
                 for key, value in queryset.aggregate_expressions.items():
                     if isinstance(value, Count):
                         queryset_results[key] = 0
@@ -519,11 +522,9 @@ class QuerysetsSingleQueryFetch:
             with connections["default"].cursor() as cursor:
                 cursor.execute(raw_sql, params={})
                 raw_sql_result_dict: dict = cursor.fetchone()[0]
-                print(f"Raw SQL result: {raw_sql_result_dict}")
         else:
             # all querysets are always empty (EmptyResultSet)
             raw_sql_result_dict = {}
-            print("All querysets are empty")
 
         final_result = []
         index = 0
@@ -532,14 +533,14 @@ class QuerysetsSingleQueryFetch:
                 # empty sql case
                 final_result.append(result)
                 continue
-            
+
             raw_results = raw_sql_result_dict.get(str(index), [])
-            
+
             converted_results = self._convert_raw_results_to_final_queryset_results(
                 queryset=queryset,
                 queryset_raw_results=raw_results,
             )
-            
+
             final_result.append(converted_results)
             index += 1
 
