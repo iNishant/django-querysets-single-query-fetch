@@ -13,6 +13,10 @@ from django.db.models import (
     QuerySet,
     UUIDField,
     Count,
+    Sum,
+    Avg,
+    Max,
+    Min,
     DateTimeField,
     DateField,
 )
@@ -48,7 +52,23 @@ class QuerysetGetOrNoneWrapper:
         self.queryset = queryset[:1]  # force limit 1
 
 
-QuerysetWrapperType = Union[QuerySet, QuerysetCountWrapper, QuerysetGetOrNoneWrapper]
+class QuerysetAggregateWrapper:
+    """
+    Wrapper around queryset to indicate that we want to fetch the result of .aggregate()
+    This is useful for executing aggregate queries in a single database query along with other querysets.
+
+    Since aggregates don't support lazy evaluation, we need to store the queryset and
+    the aggregate expressions separately.
+    """
+
+    def __init__(self, queryset: QuerySet, **aggregate_expressions) -> None:
+        self.queryset = queryset
+        self.aggregate_expressions = aggregate_expressions
+
+
+QuerysetWrapperType = Union[
+    QuerySet, QuerysetCountWrapper, QuerysetGetOrNoneWrapper, QuerysetAggregateWrapper
+]
 
 RESULT_PLACEHOLDER = object()
 
@@ -182,22 +202,34 @@ class QuerysetsSingleQueryFetch:
         elif isinstance(queryset, QuerysetGetOrNoneWrapper):
             _queryset = queryset.queryset
             compiler = _queryset.query.get_compiler(using=_queryset.db)
+        elif isinstance(queryset, QuerysetAggregateWrapper):
+            _queryset = queryset.queryset
+            compiler = _queryset.query.get_compiler(using=_queryset.db)
         else:
             # queryset is the normal django queryset not wrapped by anything
             compiler = queryset.query.get_compiler(using=queryset.db)
 
         return compiler
 
-    def _get_sanitized_sql_param(self, param: str) -> str:
+    def _get_sanitized_sql_param(self, param) -> str:
+        if param is None:
+            return "NULL"
+        if isinstance(param, (int, float)):
+            return str(param)
+        if isinstance(param, bool):
+            return "TRUE" if param else "FALSE"
+
+        param_str = str(param)
+
         try:
             from psycopg import sql
 
-            return sql.quote(param)
+            return sql.quote(param_str)
         except ImportError:
             try:
                 from psycopg2.extensions import QuotedString
 
-                return QuotedString(param).getquoted().decode("utf-8")
+                return QuotedString(param_str).getquoted().decode("utf-8")
             except ImportError:
                 raise ImportError("psycopg or psycopg2 not installed")
 
@@ -237,7 +269,48 @@ class QuerysetsSingleQueryFetch:
 
         django_sql = sql % quoted_params
 
-        return f"(SELECT COALESCE(json_agg(item), '[]') FROM ({django_sql}) item)"
+        if isinstance(queryset, QuerysetAggregateWrapper):
+            compiler = self._get_compiler_from_queryset(queryset.queryset)
+            sql, params = compiler.as_sql()
+
+            if isinstance(params, dict):
+                quoted_params = {}
+                for key, value in params.items():
+                    quoted_params[key] = self._get_sanitized_sql_param(value)
+                base_sql = sql % quoted_params
+            else:
+                quoted_params = []
+                for value in params:
+                    quoted_params.append(self._get_sanitized_sql_param(value))
+                base_sql = sql % tuple(quoted_params)
+
+            aggregate_sql_parts = []
+            for key, value in queryset.aggregate_expressions.items():
+                if isinstance(value, Sum):
+                    field = value.source_expressions[0].name
+                    aggregate_sql_parts.append(f"'{key}', SUM(subquery.{field})")
+                elif isinstance(value, Count):
+                    field = value.source_expressions[0].name
+                    if field == "*":
+                        aggregate_sql_parts.append(f"'{key}', COUNT(*)")
+                    else:
+                        aggregate_sql_parts.append(f"'{key}', COUNT(subquery.{field})")
+                elif isinstance(value, Avg):
+                    field = value.source_expressions[0].name
+                    aggregate_sql_parts.append(f"'{key}', AVG(subquery.{field})")
+                elif isinstance(value, Max):
+                    field = value.source_expressions[0].name
+                    aggregate_sql_parts.append(f"'{key}', MAX(subquery.{field})")
+                elif isinstance(value, Min):
+                    field = value.source_expressions[0].name
+                    aggregate_sql_parts.append(f"'{key}', MIN(subquery.{field})")
+
+            if aggregate_sql_parts:
+                return f"(SELECT array_to_json(array[row(json_build_object({', '.join(aggregate_sql_parts)}))]) FROM ({base_sql}) AS subquery)"
+            else:
+                return "(SELECT array_to_json(array[row('{}'::jsonb)]))"
+        else:
+            return f"(SELECT COALESCE(json_agg(item), '[]') FROM ({django_sql}) item)"
 
     def _transform_object_to_handle_json_agg(self, obj):
         """
@@ -362,6 +435,17 @@ class QuerysetsSingleQueryFetch:
     ):
         if isinstance(queryset, QuerysetCountWrapper):
             queryset_results = queryset_raw_results[0]["__count"]
+        elif isinstance(queryset, QuerysetAggregateWrapper):
+            if queryset_raw_results and len(queryset_raw_results) > 0:
+                nested_result = queryset_raw_results[0].get("f1", {})
+                queryset_results = nested_result
+            else:
+                queryset_results = {
+                    key: None for key in queryset.aggregate_expressions.keys()
+                }
+                for key, value in queryset.aggregate_expressions.items():
+                    if isinstance(value, Count):
+                        queryset_results[key] = 0
         else:
             if isinstance(queryset, QuerysetGetOrNoneWrapper):
                 django_queryset = queryset.queryset
@@ -400,6 +484,8 @@ class QuerysetsSingleQueryFetch:
             empty_sql_val = 0
         elif isinstance(queryset, QuerysetGetOrNoneWrapper):
             empty_sql_val = None
+        elif isinstance(queryset, QuerysetAggregateWrapper):
+            empty_sql_val = {}
         else:
             # normal queryset
             empty_sql_val = []
@@ -416,9 +502,8 @@ class QuerysetsSingleQueryFetch:
 
         for queryset_sql, queryset in zip(django_sqls_for_querysets, self.querysets):
             if not queryset_sql:
-                final_result_list.append(
-                    self._get_empty_queryset_value(queryset=queryset)
-                )
+                empty_value = self._get_empty_queryset_value(queryset=queryset)
+                final_result_list.append(empty_value)
             else:
                 final_result_list.append(
                     RESULT_PLACEHOLDER
@@ -448,12 +533,15 @@ class QuerysetsSingleQueryFetch:
                 # empty sql case
                 final_result.append(result)
                 continue
-            final_result.append(
-                self._convert_raw_results_to_final_queryset_results(
-                    queryset=queryset,
-                    queryset_raw_results=raw_sql_result_dict[str(index)],
-                )
+
+            raw_results = raw_sql_result_dict.get(str(index), [])
+
+            converted_results = self._convert_raw_results_to_final_queryset_results(
+                queryset=queryset,
+                queryset_raw_results=raw_results,
             )
+
+            final_result.append(converted_results)
             index += 1
 
         return final_result

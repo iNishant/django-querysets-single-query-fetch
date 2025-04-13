@@ -59,6 +59,10 @@ jobs:
           pip install Django==${{ matrix.django-version }}
           pip install ${{ matrix.psycopg-package }}
       - name: Run tests
+        env:
+          DEFAULT_DB_HOST: localhost
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
         run: |
           ./check-lint.sh
           python manage.py test -v 3 --no-input
