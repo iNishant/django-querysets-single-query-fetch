@@ -78,11 +78,14 @@ WSGI_APPLICATION = "testproject.wsgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": "testdb",
+        "NAME": "sqf-db",
         "USER": "postgres",
         "PASSWORD": "postgres",
         "HOST": os.environ.get("DEFAULT_DB_HOST") or "localhost",
         "PORT": "5432",
+        "TEST": {
+            "NAME": "sqf-db-test",
+        },
     }
 }
 

@@ -14,19 +14,25 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
+        psycopg-package: ["psycopg2", "psycopg"]
         python-version: ["3.9", "3.10", "3.11"]
-        django-version: ["4.0", "4.1", "4.2", "5.0", "5.1"]
+        django-version: ["4.0", "4.1", "4.2", "5.0", "5.1", "5.2"]
         exclude:
-          # Django 5.0+ requires Python 3.10+
           - python-version: "3.9"
             django-version: "5.0"
           - python-version: "3.9"
             django-version: "5.1"
-      max-parallel: 5
+          - python-version: "3.9"
+            django-version: "5.2"
+          - django-version: "4.0"
+            psycopg-package: "psycopg"
+          - django-version: "4.1"
+            psycopg-package: "psycopg"
+      max-parallel: 20
 
     services:
       postgres:
-        image: postgres:13
+        image: postgres:14
         env:
           POSTGRES_PASSWORD: postgres
         options: >-
@@ -50,7 +56,8 @@ jobs:
           # Install main dependencies, dev dependencies, and the specific Django version for the matrix
           # Using -e .[dev] installs the current package in editable mode with dev extras
           uv pip install --system -e .[dev]
-          uv pip install --system Django==${{ matrix.django-version }}
+          pip install Django==${{ matrix.django-version }}
+          pip install ${{ matrix.psycopg-package }}
       - name: Run tests
         run: |
           ./check-lint.sh

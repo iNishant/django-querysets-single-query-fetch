@@ -24,7 +24,6 @@ from django.db.models.query import (
     get_related_populators,
 )
 from django.utils.dateparse import parse_datetime
-from psycopg2.extensions import QuotedString
 
 logger = logging.getLogger(__name__)
 
@@ -189,6 +188,19 @@ class QuerysetsSingleQueryFetch:
 
         return compiler
 
+    def _get_sanitized_sql_param(self, param: str) -> str:
+        try:
+            from psycopg import sql
+
+            return sql.quote(param)
+        except ImportError:
+            try:
+                from psycopg2.extensions import QuotedString
+
+                return QuotedString(param).getquoted().decode("utf-8")
+            except ImportError:
+                raise ImportError("psycopg or psycopg2 not installed")
+
     def _get_django_sql_for_queryset(self, queryset: QuerysetWrapperType) -> str:
         """
         gets the sql that django would normally execute for the queryset, return empty string
@@ -212,7 +224,7 @@ class QuerysetsSingleQueryFetch:
         for param in params:
             if isinstance(param, str):
                 # this is to handle special char handling
-                param = QuotedString(param).getquoted().decode("utf-8")
+                param = self._get_sanitized_sql_param(param)
             elif isinstance(param, UUID) or isinstance(param, datetime.datetime):
                 param = f"'{param}'"
             elif isinstance(param, int) or isinstance(param, float):
@@ -419,7 +431,7 @@ class QuerysetsSingleQueryFetch:
             raw_sql = f"""
                 SELECT
                     json_build_object(
-                        {', '.join([f"'{i}', {sql}" for i, sql in enumerate(non_empty_django_sqls_for_querysets)])}
+                        {", ".join([f"'{i}', {sql}" for i, sql in enumerate(non_empty_django_sqls_for_querysets)])}
                 )
             """
             with connections["default"].cursor() as cursor:
