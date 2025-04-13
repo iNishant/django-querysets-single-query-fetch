@@ -31,7 +31,6 @@ classifiers = [
 ]
 dependencies = [
     "django>=4.0,<5.3", # Updated to include Django 5.2
-    "psycopg2==2.9.9" # Keep specific version for now
 ]
 
 [project.urls]

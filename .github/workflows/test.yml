@@ -14,6 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
+        psycopg-package: ["psycopg2", "psycopg"]
         python-version: ["3.9", "3.10", "3.11"]
         django-version: ["4.0", "4.1", "4.2", "5.0", "5.1", "5.2"]
         exclude:
@@ -53,6 +54,7 @@ jobs:
           # Using -e .[dev] installs the current package in editable mode with dev extras
           uv pip install --system -e .[dev]
           uv pip install --system Django==${{ matrix.django-version }}
+          uv pip install --system ${{ matrix.psycopg-package }}
       - name: Run tests
         run: |
           ./check-lint.sh
