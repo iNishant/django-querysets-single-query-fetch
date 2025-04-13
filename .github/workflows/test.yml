@@ -53,8 +53,8 @@ jobs:
           # Install main dependencies, dev dependencies, and the specific Django version for the matrix
           # Using -e .[dev] installs the current package in editable mode with dev extras
           uv pip install --system -e .[dev]
-          uv pip install --system Django==${{ matrix.django-version }}
-          uv pip install --system ${{ matrix.psycopg-package }}
+          pip install Django==${{ matrix.django-version }}
+          pip install ${{ matrix.psycopg-version }}
       - name: Run tests
         run: |
           ./check-lint.sh
