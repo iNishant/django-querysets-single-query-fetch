@@ -18,174 +18,195 @@ class QuerysetAggregateWrapperPostgresTestCase(TransactionTestCase):
         self.category2 = baker.make(StoreProductCategory, store=self.store)
         self.product_1 = baker.make(StoreProduct, store=self.store, selling_price=50.22)
         self.product_2 = baker.make(
-            StoreProduct, store=self.store, category=self.category1, selling_price=100.33
+            StoreProduct,
+            store=self.store,
+            category=self.category1,
+            selling_price=100.33,
         )
         self.product_3 = baker.make(
             StoreProduct, store=self.store, category=self.category1, selling_price=75.50
         )
         self.product_4 = baker.make(
-            StoreProduct, store=self.store, category=self.category2, selling_price=120.75
+            StoreProduct,
+            store=self.store,
+            category=self.category2,
+            selling_price=120.75,
         )
 
     def test_simple_aggregate(self):
         """Test simple aggregate with Sum"""
         queryset = StoreProduct.objects.filter()
-        aggregate_expressions = {'total_price': Sum("selling_price")}
+        aggregate_expressions = {"total_price": Sum("selling_price")}
         expected_result = queryset.aggregate(**aggregate_expressions)
-        
+
         with self.assertNumQueries(1):
             results = QuerysetsSingleQueryFetch(
-                querysets=[QuerysetAggregateWrapper(queryset=queryset, **aggregate_expressions)]
+                querysets=[
+                    QuerysetAggregateWrapper(queryset=queryset, **aggregate_expressions)
+                ]
             ).execute()
-        
+
         self.assertEqual(len(results), 1)
         aggregate_result = results[0]
-        
+
         self.assertEqual(len(aggregate_result), len(expected_result))
-        self.assertIn('total_price', aggregate_result)
+        self.assertIn("total_price", aggregate_result)
         self.assertAlmostEqual(
-            float(aggregate_result['total_price']), 
-            float(expected_result['total_price']), 
-            places=2
+            float(aggregate_result["total_price"]),
+            float(expected_result["total_price"]),
+            places=2,
         )
 
     def test_multiple_aggregates(self):
         """Test multiple aggregates in a single query"""
         queryset = StoreProduct.objects.filter()
         aggregate_expressions = {
-            'total_price': Sum("selling_price"),
-            'count': Count("id"),
-            'avg_price': Avg("selling_price"),
-            'max_price': Max("selling_price"),
-            'min_price': Min("selling_price"),
+            "total_price": Sum("selling_price"),
+            "count": Count("id"),
+            "avg_price": Avg("selling_price"),
+            "max_price": Max("selling_price"),
+            "min_price": Min("selling_price"),
         }
         expected_result = queryset.aggregate(**aggregate_expressions)
-        
+
         with self.assertNumQueries(1):
             results = QuerysetsSingleQueryFetch(
-                querysets=[QuerysetAggregateWrapper(queryset=queryset, **aggregate_expressions)]
+                querysets=[
+                    QuerysetAggregateWrapper(queryset=queryset, **aggregate_expressions)
+                ]
             ).execute()
-        
+
         self.assertEqual(len(results), 1)
         aggregate_result = results[0]
-        
+
         self.assertEqual(len(aggregate_result), len(expected_result))
-        
+
         for key in expected_result.keys():
             self.assertIn(key, aggregate_result)
-            if isinstance(expected_result[key], Decimal) or isinstance(aggregate_result[key], (int, float, Decimal)):
+            if isinstance(expected_result[key], Decimal) or isinstance(
+                aggregate_result[key], (int, float, Decimal)
+            ):
                 self.assertAlmostEqual(
-                    float(aggregate_result[key]), 
-                    float(expected_result[key]), 
-                    places=2
+                    float(aggregate_result[key]), float(expected_result[key]), places=2
                 )
             else:
                 self.assertEqual(aggregate_result[key], expected_result[key])
-        
-        self.assertEqual(aggregate_result['count'], 4)
+
+        self.assertEqual(aggregate_result["count"], 4)
         self.assertAlmostEqual(
-            float(aggregate_result['total_price']), 
-            float(Decimal('50.22') + Decimal('100.33') + Decimal('75.50') + Decimal('120.75')), 
-            places=2
+            float(aggregate_result["total_price"]),
+            float(
+                Decimal("50.22")
+                + Decimal("100.33")
+                + Decimal("75.50")
+                + Decimal("120.75")
+            ),
+            places=2,
         )
 
     def test_filtered_aggregate(self):
         """Test aggregate with filter"""
         queryset = StoreProduct.objects.filter(category=self.category1)
         aggregate_expressions = {
-            'total_price': Sum("selling_price"),
-            'count': Count("id"),
+            "total_price": Sum("selling_price"),
+            "count": Count("id"),
         }
         expected_result = queryset.aggregate(**aggregate_expressions)
-        
+
         with self.assertNumQueries(1):
             results = QuerysetsSingleQueryFetch(
-                querysets=[QuerysetAggregateWrapper(queryset=queryset, **aggregate_expressions)]
+                querysets=[
+                    QuerysetAggregateWrapper(queryset=queryset, **aggregate_expressions)
+                ]
             ).execute()
-        
+
         self.assertEqual(len(results), 1)
         aggregate_result = results[0]
-        
+
         self.assertEqual(len(aggregate_result), len(expected_result))
-        
+
         for key in expected_result.keys():
             self.assertIn(key, aggregate_result)
-            if isinstance(expected_result[key], Decimal) or isinstance(aggregate_result[key], (int, float, Decimal)):
+            if isinstance(expected_result[key], Decimal) or isinstance(
+                aggregate_result[key], (int, float, Decimal)
+            ):
                 self.assertAlmostEqual(
-                    float(aggregate_result[key]), 
-                    float(expected_result[key]), 
-                    places=2
+                    float(aggregate_result[key]), float(expected_result[key]), places=2
                 )
             else:
                 self.assertEqual(aggregate_result[key], expected_result[key])
-        
-        self.assertEqual(aggregate_result['count'], 2)  # Only products in category1
+
+        self.assertEqual(aggregate_result["count"], 2)  # Only products in category1
         self.assertAlmostEqual(
-            float(aggregate_result['total_price']), 
-            float(Decimal('100.33') + Decimal('75.50')), 
-            places=2
+            float(aggregate_result["total_price"]),
+            float(Decimal("100.33") + Decimal("75.50")),
+            places=2,
         )
 
     def test_empty_aggregate(self):
         """Test aggregate on empty queryset"""
         queryset = StoreProduct.objects.filter(id=-1)  # No matches
         aggregate_expressions = {
-            'total_price': Sum("selling_price"),
-            'count': Count("id"),
+            "total_price": Sum("selling_price"),
+            "count": Count("id"),
         }
         expected_result = queryset.aggregate(**aggregate_expressions)
-        
+
         with self.assertNumQueries(1):
             results = QuerysetsSingleQueryFetch(
-                querysets=[QuerysetAggregateWrapper(queryset=queryset, **aggregate_expressions)]
+                querysets=[
+                    QuerysetAggregateWrapper(queryset=queryset, **aggregate_expressions)
+                ]
             ).execute()
-        
+
         self.assertEqual(len(results), 1)
         aggregate_result = results[0]
-        
+
         self.assertEqual(len(aggregate_result), len(expected_result))
-        
+
         for key in expected_result.keys():
             self.assertIn(key, aggregate_result)
             self.assertEqual(aggregate_result[key], expected_result[key])
-        
-        self.assertEqual(aggregate_result['count'], 0)
-        self.assertIsNone(aggregate_result['total_price'])
+
+        self.assertEqual(aggregate_result["count"], 0)
+        self.assertIsNone(aggregate_result["total_price"])
 
     def test_mix_with_other_querysets(self):
         """Test mixture of aggregate wrapper and other querysets"""
         queryset = StoreProduct.objects.filter()
         aggregate_expressions = {
-            'total_price': Sum("selling_price"),
-            'count': Count("id"),
+            "total_price": Sum("selling_price"),
+            "count": Count("id"),
         }
         expected_result = queryset.aggregate(**aggregate_expressions)
         regular_queryset = StoreProductCategory.objects.filter()
-        
+
         with self.assertNumQueries(1):
             results = QuerysetsSingleQueryFetch(
                 querysets=[
-                    QuerysetAggregateWrapper(queryset=queryset, **aggregate_expressions),
-                    regular_queryset
+                    QuerysetAggregateWrapper(
+                        queryset=queryset, **aggregate_expressions
+                    ),
+                    regular_queryset,
                 ]
             ).execute()
-        
+
         self.assertEqual(len(results), 2)
         aggregate_result = results[0]
         categories = results[1]
-        
+
         self.assertEqual(len(aggregate_result), len(expected_result))
-        
+
         for key in expected_result.keys():
             self.assertIn(key, aggregate_result)
-            if isinstance(expected_result[key], Decimal) or isinstance(aggregate_result[key], (int, float, Decimal)):
+            if isinstance(expected_result[key], Decimal) or isinstance(
+                aggregate_result[key], (int, float, Decimal)
+            ):
                 self.assertAlmostEqual(
-                    float(aggregate_result[key]), 
-                    float(expected_result[key]), 
-                    places=2
+                    float(aggregate_result[key]), float(expected_result[key]), places=2
                 )
             else:
                 self.assertEqual(aggregate_result[key], expected_result[key])
-        
+
         regular_categories = list(regular_queryset)
         self.assertEqual(len(categories), len(regular_categories))
