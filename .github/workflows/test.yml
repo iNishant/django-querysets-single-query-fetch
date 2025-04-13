@@ -18,14 +18,15 @@ jobs:
         python-version: ["3.9", "3.10", "3.11"]
         django-version: ["4.0", "4.1", "4.2", "5.0", "5.1", "5.2"]
         exclude:
-          # Django 5.0+ requires Python 3.10+
           - python-version: "3.9"
             django-version: "5.0"
           - python-version: "3.9"
             django-version: "5.1"
           - python-version: "3.9"
             django-version: "5.2"
-      max-parallel: 5
+          - django-version: "4.0"
+            psycopg-package: "psycopg"
+      max-parallel: 20
 
     services:
       postgres:
