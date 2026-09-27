@@ -147,6 +147,35 @@ class QuerysetsSingleQueryFetchPostgresTestCase(TransactionTestCase):
         self.assertEqual(len(stores), 1)
         self.assertEqual(self.store.id, stores[0].id)
 
+    def test_deferred_fields_are_not_fetched(self):
+        with self.assertNumQueries(1):
+            products, store_products, products_with_store = QuerysetsSingleQueryFetch(
+                querysets=[
+                    StoreProduct.objects.only("name").order_by("id"),
+                    # sets known related objects (store) on the queryset
+                    self.store.storeproduct_set.only("name").order_by("id"),
+                    StoreProduct.objects.select_related("store")
+                    .only("name", "store__name")
+                    .order_by("id"),
+                ]
+            ).execute()
+
+        for fetched_products in [products, store_products, products_with_store]:
+            self.assertEqual(
+                [product.id for product in fetched_products],
+                [self.product_1.id, self.product_2.id],
+            )
+            self.assertEqual(
+                [product.name for product in fetched_products],
+                [self.product_1.name, self.product_2.name],
+            )
+            self.assertIn("selling_price", fetched_products[0].get_deferred_fields())
+        self.assertEqual(products_with_store[0].store.name, self.store.name)
+        self.assertEqual(
+            products_with_store[0].store.get_deferred_fields(),
+            {"created_at", "expired_on"},
+        )
+
     def test_query_on_json_field_with_dict_data(self):
         # postgres json field need not be a dict in python,
         # it can be a list as well
