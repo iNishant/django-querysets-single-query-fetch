@@ -10,7 +10,7 @@ from django_querysets_single_query_fetch.service import (
 from testapp.models import OnlineStore, StoreProduct, StoreProductCategory
 
 
-class QuerysetsSingleQueryFetchPostgresTestCase(TransactionTestCase):
+class QuerysetsSingleQueryFetchTestCase(TransactionTestCase):
     def setUp(self) -> None:
         self.today = datetime.now(tz=timezone.utc)
         self.store = baker.make(OnlineStore, expired_on=self.today)

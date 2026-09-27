@@ -1,11 +1,14 @@
 ## Django Querysets Single Query Fetch
 
-Executes multiple querysets over a single db query and returns results which would have been returned in normal evaluation of querysets. This can help in critical paths to avoid network latency. Ideal use case is fetching multiple small and optimised independent querysets where above mentioned latencies can dominate total execution time.
+Executes multiple querysets in a single database round trip and returns results which would have been returned in normal evaluation of querysets. This can help in critical paths to avoid network latency. Ideal use case is fetching multiple small and optimised independent querysets where above mentioned latencies can dominate total execution time.
 
-Supports only Postgres as of now
+Supports PostgreSQL and MySQL
+
+- **PostgreSQL**: querysets are combined into a single SQL query (using `json_build_object` and `json_agg`) and results are parsed back from JSON
+- **MySQL**: querysets are sent as a single multi statement query and each queryset's result set is parsed by Django as usual. This needs multi statements enabled on the connection, which is the default for `mysqlclient` (don't set `"multi_statements": False` in the database `OPTIONS`)
 
 > [!NOTE]
-> The performance gains from this utility were pretty significant for our use cases so in some places we have added quick hacks (see `_transform_object_to_handle_json_agg`) to get around some parsing/conversion issues where raw values are not parsed properly into their python types (for eg. datetime, UUID, Decimal). This is usually done in [from_db_value](https://docs.djangoproject.com/en/5.0/ref/models/fields/#django.db.models.Field.from_db_value) for custom fields and by database-specific backends for django supported fields (psycopg for postgres). If you encounter a similar issue, just send a patch with a quick hack. For a complete solution, we would have to dive deeper into psycopg/postgres and its handling of `json_agg` output.
+> (PostgreSQL) The performance gains from this utility were pretty significant for our use cases so in some places we have added quick hacks (see `_transform_object_to_handle_json_agg`) to get around some parsing/conversion issues where raw values are not parsed properly into their python types (for eg. datetime, UUID, Decimal). This is usually done in [from_db_value](https://docs.djangoproject.com/en/5.0/ref/models/fields/#django.db.models.Field.from_db_value) for custom fields and by database-specific backends for django supported fields (psycopg for postgres). If you encounter a similar issue, just send a patch with a quick hack. For a complete solution, we would have to dive deeper into psycopg/postgres and its handling of `json_agg` output.
 
 ## Installation
 
@@ -61,9 +64,8 @@ assert results == [queryset1.count(), list(queryset2), ...]
 - Anything else which makes this better, open to ideas
 - Better readable way of accessing results (instead of `results[0]`, `results[1]`)
 - `QuerysetFirstWrapper`, `QuerysetLastWrapper` etc for lazy evaluating `.first()` and `.last()`
-- MySQL support as an experiment
 - "How it works" section/diagram?
 
 ## Notes
 
-- Note parallelisation by postgres is not guaranteed, as it depends on lot of config params (max_parallel_workers_per_gather, min_parallel_table_scan_size, max_parallel_workers etc). Even without parallelisation, this can be faster than normal one-by-one evaluation of querysets due to reduced no of network trips.
+- The database still executes the querysets one after another, not in parallel. The time saved is the network round trips between querysets, which is why this helps most with many small and fast querysets. Postgres may still use its usual parallel query within a single queryset (for eg. a parallel scan of a large table), same as it would without this utility.

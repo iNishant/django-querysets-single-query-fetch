@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "django-querysets-single-query-fetch"
-version = "0.0.14"
-description = "Execute multiple Django querysets in a single SQL query"
+version = "0.0.15"
+description = "Execute multiple Django querysets in a single database round trip"
 readme = "README.md"
 requires-python = ">=3.9"
 license = "Apache-2.0" # SPDX identifier

@@ -12,7 +12,7 @@ from testapp.models import OnlineStore, StoreProduct, StoreProductCategory
 
 
 @skipIf(django.VERSION < (6, 1), "fetch modes were added in django 6.1")
-class FetchModesPostgresTestCase(TransactionTestCase):
+class FetchModesTestCase(TransactionTestCase):
     def setUp(self) -> None:
         self.store_1 = baker.make(OnlineStore)
         self.store_2 = baker.make(OnlineStore)

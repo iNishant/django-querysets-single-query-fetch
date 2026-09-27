@@ -9,7 +9,7 @@ from model_bakery import baker
 from testapp.models import OnlineStore, StoreProduct, StoreProductCategory
 
 
-class QuerysetGetOrNoneWrapperPostgresTestCase(TransactionTestCase):
+class QuerysetGetOrNoneWrapperTestCase(TransactionTestCase):
     def setUp(self) -> None:
         self.today = datetime.now(tz=timezone.utc)
         self.store = baker.make(OnlineStore, expired_on=self.today)

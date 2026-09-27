@@ -89,3 +89,46 @@ jobs:
         run: |
           ./check-lint.sh
           python manage.py test -v 3 --no-input
+
+  test-mysql:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12"]
+        django-version: ["4.2", "5.2", "6.0", "6.1"]
+
+    services:
+      mysql:
+        # Django 6.1 requires MySQL 8.4+
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: mysql
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -pmysql"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 3306:3306
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install uv and dependencies
+        run: |
+          # mysqlclient is built from source
+          sudo apt-get update
+          sudo apt-get install -y libmysqlclient-dev pkg-config
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          source "$HOME/.cargo/env"
+          uv pip install --system -e .[dev]
+          pip install Django==${{ matrix.django-version }}
+          pip install mysqlclient
+      - name: Run tests
+        env:
+          DB_ENGINE: mysql
+        run: |
+          python manage.py test -v 3 --no-input

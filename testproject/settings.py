@@ -89,6 +89,21 @@ DATABASES = {
     }
 }
 
+if os.environ.get("DB_ENGINE") == "mysql":
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.mysql",
+            "NAME": "sqf-db",
+            "USER": "root",
+            "PASSWORD": "mysql",
+            "HOST": os.environ.get("DEFAULT_DB_HOST") or "127.0.0.1",
+            "PORT": "3306",
+            "TEST": {
+                "NAME": "sqf-db-test",
+            },
+        }
+    }
+
 
 # Password validation
 # https://docs.djangoproject.com/en/4.0/ref/settings/#auth-password-validators
