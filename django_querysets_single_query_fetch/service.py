@@ -3,8 +3,10 @@ import json
 import logging
 import operator
 from decimal import Decimal
+from functools import partial
 from typing import Any, List, Tuple, Union
 from uuid import UUID
+from weakref import ref as weak_ref
 
 from django.core.exceptions import EmptyResultSet
 from django.db import connections
@@ -51,6 +53,22 @@ class QuerysetGetOrNoneWrapper:
 QuerysetWrapperType = Union[QuerySet, QuerysetCountWrapper, QuerysetGetOrNoneWrapper]
 
 RESULT_PLACEHOLDER = object()
+
+
+def _get_from_db(model_cls: Any, fetch_mode: Any) -> Any:
+    """
+    returns model_cls.from_db with fetch_mode bound to it (fetch modes were added in django 6.1)
+    """
+    if fetch_mode is None:
+        # django < 6.1
+        return model_cls.from_db
+    try:
+        # handles deprecated from_db() overrides which don't accept fetch_mode
+        from django.db.models.query import _get_from_db as django_get_from_db
+    except ImportError:
+        # removed in django 7.0, where all from_db() methods accept fetch_mode
+        return partial(model_cls.from_db, fetch_mode=fetch_mode)
+    return django_get_from_db(model_cls, fetch_mode)
 
 
 class QuerysetsSingleQueryFetch:
@@ -248,6 +266,10 @@ class QuerysetsSingleQueryFetch:
             return obj
 
         for field in obj.__class__._meta.fields:
+            if field.attname not in obj.__dict__:
+                # deferred field (eg. .only()/.defer()), accessing it would trigger a query
+                # (or raise FieldFetchBlocked with FETCH_RAISE fetch mode in django 6.1+)
+                continue
             if issubclass(DecimalField, field.__class__):
                 float_value = getattr(obj, field.attname)
                 if float_value is not None:
@@ -303,27 +325,36 @@ class QuerysetsSingleQueryFetch:
         init_list = [
             f[0].target.attname for f in select[model_fields_start:model_fields_end]
         ]
-        related_populators = get_related_populators(klass_info, select, db)
+        # fetch modes were added in django 6.1 (see QuerySet.fetch_mode())
+        fetch_mode = getattr(queryset, "_fetch_mode", None)
+        from_db = _get_from_db(model_cls, fetch_mode)
+        if fetch_mode is None:
+            related_populators = get_related_populators(klass_info, select, db)
+        else:
+            related_populators = get_related_populators(
+                klass_info, select, db, fetch_mode
+            )
         known_related_objects = [
             (
                 field,
                 related_objs,
-                operator.attrgetter(
-                    *[
-                        field.attname
-                        if from_field == "self"
-                        else queryset.model._meta.get_field(from_field).attname
-                        for from_field in field.from_fields
-                    ]
-                ),
+                attnames := [
+                    field.attname
+                    if from_field == "self"
+                    else queryset.model._meta.get_field(from_field).attname
+                    for from_field in field.from_fields
+                ],
+                operator.attrgetter(*attnames),
             )
             for field, related_objs in queryset._known_related_objects.items()
         ]
 
+        peers = []
         for row in compiler.results_iter(results):
-            obj = model_cls.from_db(
-                db, init_list, row[model_fields_start:model_fields_end]
-            )
+            obj = from_db(db, init_list, row[model_fields_start:model_fields_end])
+            if fetch_mode is not None and fetch_mode.track_peers:
+                peers.append(weak_ref(obj))
+                obj._state.peers = peers
 
             # because of json_agg some field level parsing/handling broke, patch it for now
             # TODO: point field handling
@@ -335,9 +366,13 @@ class QuerysetsSingleQueryFetch:
 
             obj = self._transform_object_to_handle_json_agg(obj=obj)
             # Add the known related objects to the model.
-            for field, rel_objs, rel_getter in known_related_objects:
+            for field, rel_objs, rel_attnames, rel_getter in known_related_objects:
                 # Avoid overwriting objects loaded by, e.g., select_related().
                 if field.is_cached(obj):
+                    continue
+                # Avoid fetching potentially deferred attributes that would
+                # result in unexpected queries.
+                if any(attname not in obj.__dict__ for attname in rel_attnames):
                     continue
                 rel_obj_id = rel_getter(obj)
                 try:
