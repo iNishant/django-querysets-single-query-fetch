@@ -1,10 +1,9 @@
-import datetime
 import json
 import logging
 import operator
 from decimal import Decimal
 from functools import partial
-from typing import Any, List, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 from uuid import UUID
 from weakref import ref as weak_ref
 
@@ -102,84 +101,36 @@ class QuerysetsSingleQueryFetch:
         self, queryset: QuerySet, using: str
     ) -> Any:
         """
-        slightly modified copy paste from get_count and get_aggregation in django.db.models.sql.compiler
+        compiler for the count query, which counts the same rows as queryset.count()
+        (simplified from get_count and get_aggregation in django.db.models.sql.query)
         """
         obj = queryset.query.clone()
-        obj.add_annotation(Count("*"), alias="__count")
-        added_aggregate_names = ["__count"]
-        existing_annotations = [
-            annotation
-            for alias, annotation in obj.annotations.items()
-            if alias not in added_aggregate_names
-        ]
         if (
             isinstance(obj.group_by, tuple)
             or obj.is_sliced
-            or existing_annotations
+            or obj.annotations
             or obj.distinct
             or obj.combinator
         ):
+            # count the rows of the queryset's own query, as a subquery
             from django.db.models.sql.subqueries import AggregateQuery
 
-            inner_query = obj.clone()
+            inner_query = obj
             inner_query.subquery = True
-            outer_query = AggregateQuery(obj.model, inner_query)
             inner_query.select_for_update = False
             inner_query.select_related = False
-            inner_query.set_annotation_mask(obj.annotation_select)
             # Queries with distinct_fields need ordering and when a limit is
             # applied we must take the slice from the ordered query. Otherwise
             # no need for ordering.
             inner_query.clear_ordering(force=False)
-            if not inner_query.distinct:
-                # If the inner query uses default select and it has some
-                # aggregate annotations, then we must make sure the inner
-                # query is grouped by the main model's primary key. However,
-                # clearing the select clause can alter results if distinct is
-                # used.
-                has_existing_aggregate_annotations = any(
-                    annotation
-                    for annotation in existing_annotations
-                    if getattr(annotation, "contains_aggregate", True)
-                )
-                if inner_query.default_cols and has_existing_aggregate_annotations:
-                    inner_query.group_by = (
-                        obj.model._meta.pk.get_col(inner_query.get_initial_alias()),
-                    )
-                inner_query.default_cols = False
-
-            relabels = {t: "subquery" for t in inner_query.alias_map}
-            relabels[None] = "subquery"
-            # Remove any aggregates marked for reduction from the subquery
-            # and move them to the outer AggregateQuery.
-            col_cnt = 0
-            for alias, expression in list(inner_query.annotation_select.items()):
-                annotation_select_mask = inner_query.annotation_select_mask
-                if expression.is_summary:
-                    expression, col_cnt = inner_query.rewrite_cols(expression, col_cnt)
-                    outer_query.annotations[alias] = expression.relabeled_clone(
-                        relabels
-                    )
-                    del inner_query.annotations[alias]
-                    annotation_select_mask.remove(alias)
-                # Make sure the annotation_select wont use cached results.
-                inner_query.set_annotation_mask(inner_query.annotation_select_mask)
-            if (
-                inner_query.select == ()
-                and not inner_query.default_cols
-                and not inner_query.annotation_select_mask
-            ):
-                # In case of Model.objects[0:3].count(), there would be no
-                # field selected in the inner query, yet we must use a subquery.
-                # So, make sure at least one field is selected.
-                inner_query.select = (
-                    obj.model._meta.pk.get_col(inner_query.get_initial_alias()),
-                )
+            outer_query = AggregateQuery(obj.model, inner_query)
         else:
             outer_query = obj
             obj.select = ()
             obj.default_cols = False
             obj.extra = {}
+        # the count is the only selected column
+        outer_query.add_annotation(Count("*"), alias="__count")
 
         empty_set_result = [
             expression.empty_result_set_value
@@ -211,56 +162,30 @@ class QuerysetsSingleQueryFetch:
 
         return compiler
 
-    def _get_sanitized_sql_param(self, param: str) -> str:
-        try:
-            from psycopg import sql
-
-            return sql.quote(param)
-        except ImportError:
-            try:
-                from psycopg2.extensions import QuotedString
-
-                return QuotedString(param).getquoted().decode("utf-8")
-            except ImportError:
-                raise ImportError("psycopg or psycopg2 not installed")
-
-    def _get_django_sql_for_queryset(self, queryset: QuerysetWrapperType) -> str:
+    def _get_django_sql_for_queryset(
+        self, queryset: QuerysetWrapperType
+    ) -> Optional[Tuple[str, Tuple[Any, ...]]]:
         """
-        gets the sql that django would normally execute for the queryset, return empty string
-        if queryset will always return empty irrespective of params ()
+        gets the sql (and its params) that django would normally execute for the queryset, wrapped in
+        json_agg, returns None if queryset will always return empty irrespective of params
         """
-
-        # handle param quoting for IN queries (TODO: find some psycopg2 way to do this)
-        # this is a bit hacky, but it works for now
-
-        quoted_params: Tuple[Any, ...] = ()
         compiler = self._get_compiler_from_queryset(queryset=queryset)
         try:
-            sql, params = compiler.as_sql(
-                with_col_aliases=True
-            )  # add col aliases other wise json
-            # build object cant handle same column name from two tables => two duplicate keys in dict
-            # (one primary, one joined for example)
-        except EmptyResultSet:
-            return ""
-
-        for param in params:
-            if isinstance(param, str):
-                # this is to handle special char handling
-                param = self._get_sanitized_sql_param(param)
-            elif isinstance(param, UUID) or isinstance(param, datetime.datetime):
-                param = f"'{param}'"
-            elif isinstance(param, int) or isinstance(param, float):
-                # type which can be passed as is
-                pass
+            if isinstance(queryset, QuerysetCountWrapper):
+                sql, params = compiler.as_sql()
             else:
-                # keep strict
-                raise ValueError(f"Unsupported param type: {type(param)}")
-            quoted_params += (param,)
+                sql, params = compiler.as_sql(
+                    with_col_aliases=True
+                )  # add col aliases other wise json
+                # build object cant handle same column name from two tables => two duplicate keys in dict
+                # (one primary, one joined for example)
+        except EmptyResultSet:
+            return None
 
-        django_sql = sql % quoted_params
-
-        return f"(SELECT COALESCE(json_agg(item), '[]') FROM ({django_sql}) item)"
+        return (
+            f"(SELECT COALESCE(json_agg(item), '[]') FROM ({sql}) item)",
+            tuple(params),
+        )
 
     def _transform_object_to_handle_json_agg(self, obj):
         """
@@ -412,7 +337,8 @@ class QuerysetsSingleQueryFetch:
         self, queryset: QuerysetWrapperType, queryset_raw_results: list
     ):
         if isinstance(queryset, QuerysetCountWrapper):
-            queryset_results = queryset_raw_results[0]["__count"]
+            # the count is the only column (it isn't aliased when counted over a subquery)
+            queryset_results = list(queryset_raw_results[0].values())[0]
         else:
             if isinstance(queryset, QuerysetGetOrNoneWrapper):
                 django_queryset = queryset.queryset
@@ -445,13 +371,13 @@ class QuerysetsSingleQueryFetch:
         return queryset_results
 
     def _convert_rows_to_final_queryset_results(
-        self, queryset: QuerysetWrapperType, column_names: list, rows: list
+        self, queryset: QuerysetWrapperType, rows: list
     ):
         """
         converts rows read from the db driver (not json) to results, same as django's queryset iterables
         """
         if isinstance(queryset, QuerysetCountWrapper):
-            return rows[0][column_names.index("__count")]
+            return rows[0][0]  # the count is the only column
 
         if isinstance(queryset, QuerysetGetOrNoneWrapper):
             django_queryset = queryset.queryset
@@ -567,8 +493,7 @@ class QuerysetsSingleQueryFetch:
         with connection.cursor() as cursor:
             cursor.execute("; ".join(sqls), params)
             while True:
-                column_names = [column[0] for column in cursor.description]
-                result_sets.append((column_names, cursor.fetchall()))
+                result_sets.append(cursor.fetchall())
                 if not cursor.nextset():
                     break
 
@@ -579,10 +504,9 @@ class QuerysetsSingleQueryFetch:
                 # empty sql case
                 final_result.append(result)
                 continue
-            column_names, rows = next(result_sets_iter)
             final_result.append(
                 self._convert_rows_to_final_queryset_results(
-                    queryset=queryset, column_names=column_names, rows=list(rows)
+                    queryset=queryset, rows=list(next(result_sets_iter))
                 )
             )
 
@@ -601,7 +525,7 @@ class QuerysetsSingleQueryFetch:
         final_result_list: List[Any] = []
 
         for queryset_sql, queryset in zip(django_sqls_for_querysets, self.querysets):
-            if not queryset_sql:
+            if queryset_sql is None:
                 final_result_list.append(
                     self._get_empty_queryset_value(queryset=queryset)
                 )
@@ -611,17 +535,25 @@ class QuerysetsSingleQueryFetch:
                 )  # will be replaced by actual result below
 
         non_empty_django_sqls_for_querysets = [
-            sql for sql in django_sqls_for_querysets if sql
+            sql_and_params
+            for sql_and_params in django_sqls_for_querysets
+            if sql_and_params is not None
         ]
         if non_empty_django_sqls_for_querysets:
             raw_sql = f"""
                 SELECT
                     json_build_object(
-                        {", ".join([f"'{i}', {sql}" for i, sql in enumerate(non_empty_django_sqls_for_querysets)])}
+                        {", ".join([f"'{i}', {sql}" for i, (sql, _) in enumerate(non_empty_django_sqls_for_querysets)])}
                 )
             """
+            # params are passed to the db driver (same as django), in the order of the sqls
+            params = [
+                param
+                for _, sql_params in non_empty_django_sqls_for_querysets
+                for param in sql_params
+            ]
             with connection.cursor() as cursor:
-                cursor.execute(raw_sql, params={})
+                cursor.execute(raw_sql, params)
                 raw_sql_result_dict: dict = cursor.fetchone()[0]
         else:
             # all querysets are always empty (EmptyResultSet)

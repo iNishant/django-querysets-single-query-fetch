@@ -176,6 +176,28 @@ class QuerysetsSingleQueryFetchTestCase(TransactionTestCase):
             {"created_at", "expired_on"},
         )
 
+    def test_filters_with_like_lookups_and_non_string_params_work(self):
+        product_3 = baker.make(
+            StoreProduct, store=self.store, name="50% off", selling_price=10
+        )
+        querysets = [
+            StoreProduct.objects.filter(name__startswith=self.product_1.name[:3]),
+            StoreProduct.objects.filter(name__icontains=self.product_2.name.upper()),
+            StoreProduct.objects.filter(name__contains="%"),
+            StoreProduct.objects.filter(selling_price__gte=Decimal("50.22")),
+            OnlineStore.objects.filter(expired_on=self.store.expired_on),
+            StoreProduct.objects.filter(id__in=[self.product_1.id, product_3.id]),
+        ]
+        querysets = [queryset.order_by("id") for queryset in querysets]
+        expected = [list(queryset) for queryset in querysets]
+        self.assertTrue(all(expected))  # every filter matches something
+
+        with self.assertNumQueries(1):
+            results = QuerysetsSingleQueryFetch(querysets=querysets).execute()
+
+        self.assertEqual(results, expected)
+        self.assertEqual(results[2], [product_3])
+
     def test_query_on_json_field_with_dict_data(self):
         # postgres json field need not be a dict in python,
         # it can be a list as well
