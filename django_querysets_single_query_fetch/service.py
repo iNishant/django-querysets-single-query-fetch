@@ -8,7 +8,7 @@ from typing import Any, List, Tuple, Union
 from uuid import UUID
 from weakref import ref as weak_ref
 
-from django.core.exceptions import EmptyResultSet
+from django.core.exceptions import EmptyResultSet, ImproperlyConfigured
 from django.db import connections
 from django.db.models import (
     DecimalField,
@@ -21,10 +21,12 @@ from django.db.models import (
 from django.db.models.query import (
     FlatValuesListIterable,
     ModelIterable,
+    NamedValuesListIterable,
     ValuesIterable,
     ValuesListIterable,
     get_related_populators,
 )
+from django.db.models.utils import create_namedtuple_class
 from django.utils.dateparse import parse_datetime
 
 logger = logging.getLogger(__name__)
@@ -73,12 +75,15 @@ def _get_from_db(model_cls: Any, fetch_mode: Any) -> Any:
 
 class QuerysetsSingleQueryFetch:
     """
-    Executes multiple querysets in a single db query using json_build_object and returns results which
-    would have been returned in normal evaluation of querysets. This can help in critical paths
-    to avoid network/connection/connection-pooler latency if db cpu/mem are nowhere
-    near exhaustion. Note parallelisation by postgres is not guaranteed, as it depends on lot of config params
-    (max_parallel_workers_per_gather, min_parallel_table_scan_size, max_parallel_workers etc). Even without
-    parallelisation, this can be faster than normal evaluation of querysets due to reduced no of network trips.
+    Executes multiple querysets in a single db round trip and returns results which would have been
+    returned in normal evaluation of querysets. This can help in critical paths to avoid
+    network/connection/connection-pooler latency if db cpu/mem are nowhere near exhaustion.
+
+    - postgres: querysets are combined into a single query using json_build_object and json_agg
+    - mysql: querysets are sent as a single multi statement query and each result set is read back
+
+    Note the db still executes the querysets one after another (not in parallel), the time saved is
+    the network round trips between querysets.
 
     Ideal use case is fetching multiple small/optimised independent querysets where above mentioned
     latencies can dominate total execution time.
@@ -294,11 +299,6 @@ class QuerysetsSingleQueryFetch:
     def _get_instances_from_results_for_model_iterable(
         self, queryset: QuerySet, results: list
     ):
-        """
-        slightly modified copy paste from source of ModelIterable
-        """
-        instances = []
-
         # convert results coming from json_build_object to list of tuples, convert back json values to raw strings
 
         new_results = []
@@ -312,7 +312,18 @@ class QuerysetsSingleQueryFetch:
                     pass
             new_results.append(tuple(row_dict.values()))
 
-        results = [new_results]
+        return self._get_instances_from_rows(
+            queryset=queryset, rows=new_results, is_json_agg_result=True
+        )
+
+    def _get_instances_from_rows(
+        self, queryset: QuerySet, rows: list, is_json_agg_result: bool
+    ):
+        """
+        slightly modified copy paste from source of ModelIterable
+        """
+        instances = []
+        results = [rows]
 
         db = queryset.db
         compiler = queryset.query.get_compiler(using=db)
@@ -364,7 +375,8 @@ class QuerysetsSingleQueryFetch:
                 for attr_name, col_pos in annotation_col_map.items():
                     setattr(obj, attr_name, row[col_pos])
 
-            obj = self._transform_object_to_handle_json_agg(obj=obj)
+            if is_json_agg_result:
+                obj = self._transform_object_to_handle_json_agg(obj=obj)
             # Add the known related objects to the model.
             for field, rel_objs, rel_attnames, rel_getter in known_related_objects:
                 # Avoid overwriting objects loaded by, e.g., select_related().
@@ -382,13 +394,17 @@ class QuerysetsSingleQueryFetch:
                 else:
                     setattr(obj, field.name, rel_obj)
 
-            obj_fields_cache = {}
-            # because of json_agg some field level parsing/handling broke, patch it for prefetched objects
-            for prefetched_obj_name, prefetched_obj in obj._state.fields_cache.items():
-                obj_fields_cache[prefetched_obj_name] = (
-                    self._transform_object_to_handle_json_agg(obj=prefetched_obj)
-                )
-            obj._state.fields_cache = obj_fields_cache
+            if is_json_agg_result:
+                obj_fields_cache = {}
+                # because of json_agg some field level parsing/handling broke, patch it for prefetched objects
+                for (
+                    prefetched_obj_name,
+                    prefetched_obj,
+                ) in obj._state.fields_cache.items():
+                    obj_fields_cache[prefetched_obj_name] = (
+                        self._transform_object_to_handle_json_agg(obj=prefetched_obj)
+                    )
+                obj._state.fields_cache = obj_fields_cache
             instances.append(obj)
         return instances
 
@@ -428,6 +444,78 @@ class QuerysetsSingleQueryFetch:
 
         return queryset_results
 
+    def _convert_rows_to_final_queryset_results(
+        self, queryset: QuerysetWrapperType, column_names: list, rows: list
+    ):
+        """
+        converts rows read from the db driver (not json) to results, same as django's queryset iterables
+        """
+        if isinstance(queryset, QuerysetCountWrapper):
+            return rows[0][column_names.index("__count")]
+
+        if isinstance(queryset, QuerysetGetOrNoneWrapper):
+            django_queryset = queryset.queryset
+        else:
+            django_queryset = queryset
+
+        iterable_class = django_queryset._iterable_class
+        if issubclass(iterable_class, ModelIterable):
+            queryset_results = self._get_instances_from_rows(
+                queryset=django_queryset, rows=rows, is_json_agg_result=False
+            )
+        else:
+            query = django_queryset.query
+            compiler = query.get_compiler(using=django_queryset.db)
+            compiler.as_sql()  # sets internal state of compiler (select) needed by results_iter
+            converted_rows = compiler.results_iter([rows])  # applies from_db_value etc
+            # django 5.2+ selects values()/values_list() columns in the order they were specified
+            selected = getattr(query, "selected", None)
+            if selected:
+                names = list(selected)
+            else:
+                names = [
+                    *query.extra_select,
+                    *query.values_select,
+                    *query.annotation_select,
+                ]
+            if issubclass(iterable_class, ValuesIterable):
+                queryset_results = [dict(zip(names, row)) for row in converted_rows]
+            elif issubclass(iterable_class, FlatValuesListIterable):
+                queryset_results = [row[0] for row in converted_rows]
+            elif issubclass(iterable_class, ValuesListIterable):
+                fields = names
+                if django_queryset._fields and not hasattr(query, "selected"):
+                    # django < 5.2, reorder according to fields, same as ValuesListIterable
+                    fields = [
+                        *django_queryset._fields,
+                        *(
+                            f
+                            for f in query.annotation_select
+                            if f not in django_queryset._fields
+                        ),
+                    ]
+                indexes = [names.index(field) for field in fields]
+                queryset_results = [
+                    tuple(row[index] for index in indexes) for row in converted_rows
+                ]
+                if issubclass(iterable_class, NamedValuesListIterable):
+                    tuple_class = create_namedtuple_class(
+                        *(django_queryset._fields or names)
+                    )
+                    queryset_results = [
+                        tuple.__new__(tuple_class, row) for row in queryset_results
+                    ]
+            else:
+                raise ValueError(
+                    f"Unsupported queryset iterable class: {iterable_class}"
+                )
+
+        if isinstance(queryset, QuerysetGetOrNoneWrapper):
+            # convert queryset_results to either row or none
+            queryset_results = queryset_results[0] if queryset_results else None
+
+        return queryset_results
+
     def _get_empty_queryset_value(self, queryset: QuerysetWrapperType) -> Any:
         empty_sql_val: Any
 
@@ -441,7 +529,70 @@ class QuerysetsSingleQueryFetch:
 
         return empty_sql_val
 
+    def _execute_as_multi_statement_query(self, connection: Any) -> list[Any]:
+        """
+        used for mysql, which has no json_agg(row) equivalent (and JSON_ARRAYAGG does not keep the
+        queryset ordering). the querysets' sqls are sent as one multi statement query (single network
+        round trip) and one result set is read back per queryset, so rows are parsed by django as usual
+        """
+        if connection.settings_dict["OPTIONS"].get("multi_statements") is False:
+            raise ImproperlyConfigured(
+                "QuerysetsSingleQueryFetch needs multi statements for mysql, remove "
+                "'multi_statements': False from the database OPTIONS"
+            )
+
+        sqls: List[str] = []
+        params: List[Any] = []
+        final_result_list: List[Any] = []
+        for queryset in self.querysets:
+            compiler = self._get_compiler_from_queryset(queryset=queryset)
+            try:
+                sql, sql_params = compiler.as_sql()
+            except EmptyResultSet:
+                final_result_list.append(
+                    self._get_empty_queryset_value(queryset=queryset)
+                )
+                continue
+            sqls.append(sql)
+            params.extend(sql_params)
+            final_result_list.append(
+                RESULT_PLACEHOLDER
+            )  # will be replaced by actual result below
+
+        if not sqls:
+            # all querysets are always empty (EmptyResultSet)
+            return final_result_list
+
+        result_sets = []
+        with connection.cursor() as cursor:
+            cursor.execute("; ".join(sqls), params)
+            while True:
+                column_names = [column[0] for column in cursor.description]
+                result_sets.append((column_names, cursor.fetchall()))
+                if not cursor.nextset():
+                    break
+
+        result_sets_iter = iter(result_sets)
+        final_result = []
+        for queryset, result in zip(self.querysets, final_result_list):
+            if result is not RESULT_PLACEHOLDER:
+                # empty sql case
+                final_result.append(result)
+                continue
+            column_names, rows = next(result_sets_iter)
+            final_result.append(
+                self._convert_rows_to_final_queryset_results(
+                    queryset=queryset, column_names=column_names, rows=list(rows)
+                )
+            )
+
+        return final_result
+
     def execute(self) -> list[list[Any]]:
+        connection = connections["default"]
+        if connection.vendor == "mysql":
+            return self._execute_as_multi_statement_query(connection=connection)
+
         django_sqls_for_querysets = [
             self._get_django_sql_for_queryset(queryset=queryset)
             for queryset in self.querysets
@@ -469,7 +620,7 @@ class QuerysetsSingleQueryFetch:
                         {", ".join([f"'{i}', {sql}" for i, sql in enumerate(non_empty_django_sqls_for_querysets)])}
                 )
             """
-            with connections["default"].cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute(raw_sql, params={})
                 raw_sql_result_dict: dict = cursor.fetchone()[0]
         else:
